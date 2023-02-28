@@ -9,14 +9,14 @@ fi
 
 if [[ "${1-}" =~ ^-*h(elp)?$ ]]; then
     echo 'Usage: ./start.sh
-starts the db for the authorization server'
+stops the db and session store for the authorization server'
     exit
 fi
 
 cd "$(dirname "$0")"
 
 main() {
-    docker compose down
+    docker-compose down
 }
 
 main "$@"

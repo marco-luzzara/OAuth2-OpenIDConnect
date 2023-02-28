@@ -9,16 +9,26 @@ fi
 
 if [[ "${1-}" =~ ^-*h(elp)?$ ]]; then
     echo 'Usage: ./start.sh
-starts the db for the authorization server'
+starts the db and session store for the authorization server'
     exit
 fi
 
 cd "$(dirname "$0")"
 
 main() {
-    docker volume inspect mongo-data &> /dev/null || 
-        ( echo "Creating mongo-data volume" && docker volume create mongo-data )
+    local mongo_data_volume_name="mongo-data"
+    local redis_data_volume_name="redis-data"
+    docker volume inspect "$mongo_data_volume_name" &> /dev/null || 
+        ( echo "Creating $mongo_data_volume_name volume" && docker volume create "$mongo_data_volume_name" )
+    docker volume inspect "$redis_data_volume_name" &> /dev/null || 
+        ( echo "Creating $redis_data_volume_name volume" && docker volume create "$redis_data_volume_name" )
     docker-compose up --detach
+
+    sleep 30
+
+    docker cp auth_server/db_seed.js auth_server_db:/home/db_seed.js
+    docker exec -it auth_server_db \
+        mongosh "mongodb://admin:admin@localhost:27017" --file /home/db_seed.js
 }
 
 main "$@"

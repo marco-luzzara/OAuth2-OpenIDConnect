@@ -15,8 +15,6 @@ we have 3 main folders, corresponding to the entities involved in the auth flow:
 - `auth_server` folder:
     * `.env` file:
         * `PORT`: the port on localhost
-        * `DB_NAME`: db name
-        * `USERS_COLLECTION`: users collection name
         * `DB_CONNECTION_STRING`: connection string for the users db
 
 - `client` folder:

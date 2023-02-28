@@ -4,8 +4,9 @@
 services:
   auth_server_db:
     image: mongo:5.0
+    container_name: auth_server_db
     ports:
-      - "27017:8043"
+      - 8043:27017
     volumes:
       - mongo-data:/data/db
     environment:
@@ -14,10 +15,20 @@ services:
     secrets:
       - db_password
 
+  auth_server_sessions_store:
+    image: redis:7
+    container_name: auth_server_sessions_store
+    ports:
+      - 8044:6379
+    volumes:
+      - redis-data:/data
+
 secrets:
   db_password:
     file: auth_server/db_password.secret
 
 volumes:
   mongo-data:
+    external: true
+  redis-data:
     external: true
