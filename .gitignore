@@ -1,5 +1,6 @@
 # custom
 dist/
+*.secret
 
 # Logs
 logs

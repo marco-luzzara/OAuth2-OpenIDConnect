@@ -1,0 +1,23 @@
+# requirements:
+# auth_server/db_password.secret - contains the password for the auth_server_db
+
+services:
+  auth_server_db:
+    image: mongo:5.0
+    ports:
+      - "27017:8043"
+    volumes:
+      - mongo-data:/data/db
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD_FILE: /run/secrets/db_password
+    secrets:
+      - db_password
+
+secrets:
+  db_password:
+    file: auth_server/db_password.secret
+
+volumes:
+  mongo-data:
+    external: true
