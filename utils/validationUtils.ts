@@ -3,11 +3,18 @@ import * as t from 'io-ts'
 import { TypeOf } from 'io-ts'
 import { Request, Response, NextFunction } from 'express'
 
-export function exit_if_empty(expression: string, name: string) {
+export function exitIfEmpty(expression: string, name: string) {
     if (expression === '') {
         console.error(`${name} is undefined`)
         exit(1)
     }
+}
+
+export function getEnvOrExit(envName: string): string {
+    const envVar = process.env[envName] || ''
+    exitIfEmpty(envVar, `process.env.${envName}`)
+
+    return envVar
 }
 
 // https://stackoverflow.com/a/55032655/5587393

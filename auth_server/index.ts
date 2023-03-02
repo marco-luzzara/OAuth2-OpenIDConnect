@@ -1,32 +1,29 @@
 import express, { Express, NextFunction, Request, Response } from 'express';
-import morgan from 'morgan';
 import { MongoClient } from 'mongodb';
-import { exit_if_empty, validate } from '../utils/validationUtils';
+import { getEnvOrExit, validate } from '../utils/validationUtils';
 import { asyncExitHook } from 'exit-hook';
 import { User } from './model/db/User';
 import { Client } from './model/db/Client';
 import { ClientRegistrationBody } from './model/registration/ClientRegistrationBody';
 import { generateRandomHexString, generateUUIDv1 } from '../utils/generationUtils';
 import { catchAsyncErrors } from '../utils/errorHandlingUtils';
+import { buildClientRegistrationResponse } from './model/registration/ClientRegistrationResponse';
+import { useLogger } from '../utils/loggingUtils';
 
 const app: Express = express();
 app.use(express.json()) // for parsing application/json
 app.use(express.urlencoded({ extended: true })) // for parsing application/x-www-form-urlencoded
-// app.use(morgan('Authentication Server - :method :url :status :req - :response-time ms'))
 
-const port = process.env.PORT;
-const dbConnectionString: string = process.env.DB_CONNECTION_STRING || ''
-exit_if_empty(dbConnectionString, 'process.env.DB_CONNECTION_STRING')
+useLogger(app)
+
+const port = getEnvOrExit('PORT')
+const dbConnectionString = getEnvOrExit('DB_CONNECTION_STRING')
 
 // mongo setup
 const client = new MongoClient(dbConnectionString);
 const database = client.db('demo');
 const users = database.collection<User>('users');
 const clients = database.collection<Client>('clients');
-
-// app.use(validate({
-//     'post /client': { body: ClientRegistrationBody }
-// }))
 
 app.post('/client', catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) =>
     await validate(req, res, next, ClientRegistrationBody,
@@ -42,7 +39,7 @@ app.post('/client', catchAsyncErrors(async (req: Request, res: Response, next: N
             if (!insertResult.acknowledged)
                 throw new Error('Could not add the new client to the database')
 
-            res.status(201).json(newClient);
+            res.status(201).json(buildClientRegistrationResponse(newClient));
         })
 ))
 
