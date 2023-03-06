@@ -20,11 +20,10 @@ export function getEnvOrExit(envName: string): string {
 // https://stackoverflow.com/a/55032655/5587393
 type Modify<T, R> = Omit<T, keyof R> & R;
 
-export async function validate<P extends t.Props>(
+export async function validateBody<P extends t.Props>(
     req: Request, res: Response, next: NextFunction,
     bodyValidationType: t.TypeC<P>,
     handler: (req: Modify<Request, {
-        // body must have the same type of TypeC.decode().right
         body: {
             [K in keyof P]: TypeOf<P[K]>
         }
@@ -38,4 +37,31 @@ export async function validate<P extends t.Props>(
 
     req.body = bodyValidated.right
     await handler(req, res, next)
+}
+
+type MappedRequest<QueryType> = {
+    [PropertyKey in keyof Request]: PropertyKey extends Request['query'] ? QueryType : PropertyKey
+}
+
+export async function validateQueryParams<P extends t.Props>(
+    req: Request, res: Response, next: NextFunction,
+    queryValidationType: t.TypeC<P>,
+    handler: (req: Modify<Request, {
+        query: {
+            [K in keyof P]: TypeOf<P[K]>
+        }
+    }>, res: Response, next: NextFunction) => Promise<void>
+) {
+    const queryValidated = queryValidationType.decode(req.query)
+    if (queryValidated._tag === 'Left') {
+        res.status(400).send(queryValidated.left)
+        return;
+    }
+
+    req.query = queryValidated.right
+    await handler(req as Modify<Request, {
+        query: {
+            [K in keyof P]: TypeOf<P[K]>
+        }
+    }>, res, next)
 }

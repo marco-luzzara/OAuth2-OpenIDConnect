@@ -4,6 +4,7 @@ import { useLogger } from '../utils/loggingUtils';
 import { getEnvOrExit } from '../utils/validationUtils';
 
 const app: Express = express();
+app.set('view engine', 'ejs')
 app.use(express.json()) // for parsing application/json
 app.use(express.urlencoded({ extended: true })) // for parsing application/x-www-form-urlencoded
 

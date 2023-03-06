@@ -1,6 +1,6 @@
 import express, { Express, NextFunction, Request, Response } from 'express';
 import { MongoClient } from 'mongodb';
-import { getEnvOrExit, validate } from '../utils/validationUtils';
+import { getEnvOrExit, validateBody, validateQueryParams } from '../utils/validationUtils';
 import { asyncExitHook } from 'exit-hook';
 import { User } from './model/db/User';
 import { Client } from './model/db/Client';
@@ -9,6 +9,7 @@ import { generateRandomHexString, generateUUIDv1 } from '../utils/generationUtil
 import { catchAsyncErrors } from '../utils/errorHandlingUtils';
 import { buildClientRegistrationResponse } from './model/registration/ClientRegistrationResponse';
 import { useLogger } from '../utils/loggingUtils';
+import { ClientAuthorizationQueryParams } from './model/authorization/ClientAuthorizationQueryParams';
 
 const app: Express = express();
 app.use(express.json()) // for parsing application/json
@@ -26,7 +27,7 @@ const users = database.collection<User>('users');
 const clients = database.collection<Client>('clients');
 
 app.post('/client', catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) =>
-    await validate(req, res, next, ClientRegistrationBody,
+    await validateBody(req, res, next, ClientRegistrationBody,
         async (req, res: Response, next: NextFunction) => {
             const newClient: Client = {
                 applicationName: req.body.applicationName,
@@ -43,11 +44,20 @@ app.post('/client', catchAsyncErrors(async (req: Request, res: Response, next: N
         })
 ))
 
-app.get('/', async (req: Request, res: Response) => {
-    res.json(await users.find({}).toArray())
-});
+app.get('/authorize', catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) =>
+    await validateQueryParams(req, res, next, ClientAuthorizationQueryParams,
+        async (req, res: Response, next: NextFunction) => {
+            if (req.query.response_type === 'code') {
+                const clientId = req.query.client_id
+                const redirectUri = req.query.redirect_uri
+                const scope = req.query.scope
+                const state = req.query.state
 
-app.use('/auth_server', express.static('./auth_server/static'))
+            }
+        })
+));
+
+app.use('/', express.static('./auth_server/static'))
 
 // error handling middleware
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
