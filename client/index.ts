@@ -1,4 +1,4 @@
-import express, { Express, Request, Response } from 'express';
+import express, { Express, Request, Response, NextFunction } from 'express';
 import axios from 'axios';
 import { useLogger } from '../utils/loggingUtils';
 import { getEnvOrExit } from '../utils/validationUtils';
@@ -28,8 +28,10 @@ catch (err) {
 }
 
 
-app.get('/', (req: Request, res: Response) => {
-    res.send('Express + TypeScript Server');
+app.get('/', (req: Request, res: Response, next: NextFunction) => {
+    res.render(`${__dirname}/static/homepage/index.html`, {
+        authServerEndpoint
+    });
 });
 
 app.listen(port, () => {
