@@ -14,7 +14,9 @@
 
 <body>
     <div class="mdl-layout mdl-js-layout" id="login-form">
-        <% if (isUserLogged) { %>
+        <div id="wrong-credentials" class="mdl-js-snackbar mdl-snackbar">
+            <div class="mdl-snackbar__text"></div>
+        </div>
         <div class="mdl-card mdl-shadow--6dp">
             <div class="mdl-card__title mdl-color--primary mdl-color-text--white relative">
                 <h2 class="mdl-card__title-text">Login on Auth Server</h2>
@@ -34,31 +36,39 @@
             <div class="mdl-card__actions mdl-card--border">
                 <div class="mdl-grid">
                     <button
-                        class="mdl-cell mdl-cell--12-col mdl-button mdl-button--raised mdl-button--colored mdl-js-button mdl-js-ripple-effect mdl-color-text--white">
+                        class="mdl-cell mdl-cell--12-col mdl-button mdl-button--raised mdl-button--colored mdl-js-button mdl-js-ripple-effect mdl-color-text--white"
+                        onclick="login()">
                         Login
                     </button>
                 </div>
             </div>
         </div>
-        <% } else { %>
-        <div class="demo-card-square mdl-card mdl-shadow--2dp" onclick="">
-            <div class="mdl-card__title mdl-card--expand">
-                <h2 class="mdl-card__title-text">Login as ...</h2>
-            </div>
-            <div class="mdl-card__supporting-text">
-                <%= fullName %>
-            </div>
-        </div>
+        <script>
+            async function login() {
+                const response = await fetch(window.location.href, {
+                    method: 'POST',
+                    body: `{
+                        "username": "${document.getElementById('login').value}",
+                        "password": "${document.getElementById('password').value}"
+                    }`,
+                });
 
-        <div class="demo-card-square mdl-card mdl-shadow--2dp" onclick="">
-            <div class="mdl-card__title mdl-card--expand">
-                <h2 class="mdl-card__title-text">Log out and ...</h2>
-            </div>
-            <div class="mdl-card__supporting-text">
-                Log in again
-            </div>
-        </div>
-        <% } %>
+                if (response.status === 200) {
+                    const urlSearchParams = new URLSearchParams(window.location.search);
+                    const queryParams = Object.fromEntries(urlSearchParams.entries());
+                    const callback = queryParams.callback
+                    window.location.href = callback
+                    return
+                }
+
+                const errorMessage = await response.text()
+                document.getElementById('login').value = ''
+                document.getElementById('password').value = ''
+                const snackbarWrongCredentials = document.getElementById('wrong-credentials');
+                const snackBarData = { message: errorMessage };
+                snackbarWrongCredentials.MaterialSnackbar.showSnackbar(snackBarData);
+            }
+        </script>
     </div>
 
 </body>

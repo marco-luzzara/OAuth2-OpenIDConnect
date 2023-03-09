@@ -1,7 +1,7 @@
 import express, { Express, Request, Response, NextFunction } from 'express';
 import axios from 'axios';
-import { useLogger } from '../utils/loggingUtils';
-import { getEnvOrExit } from '../utils/validationUtils';
+import { useLogger } from '../common/utils/loggingUtils';
+import { getEnvOrExit } from '../common/utils/envUtils';
 
 const app: Express = express();
 app.set('view engine', 'ejs')

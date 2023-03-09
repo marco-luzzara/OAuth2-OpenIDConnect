@@ -1,5 +1,5 @@
 import * as t from 'io-ts'
-import { HttpLink } from '../../../utils/io-ts-extension/refinements/Link'
+import { HttpLink } from '../../../common/utils/io-ts-extension/refinements/Link'
 
 export const ClientAuthorizationQueryParams = t.type({
     response_type: t.union([t.literal('code'), t.literal('implicit')]),
