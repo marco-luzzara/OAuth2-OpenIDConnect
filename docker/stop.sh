@@ -8,7 +8,7 @@ if [[ "${TRACE-0}" == "1" ]]; then
 fi
 
 if [[ "${1-}" =~ ^-*h(elp)?$ ]]; then
-    echo 'Usage: ./start.sh
+    echo 'Usage: ./stop.sh
 stops the db and session store for the authorization server'
     exit
 fi

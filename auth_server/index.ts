@@ -13,7 +13,7 @@ import RedisStore from "connect-redis"
 import session from "express-session"
 import { createClient } from "redis"
 import { ClientLoginBody } from './model/routes/login';
-import * as argon2 from "argon2";
+import argon2 from "argon2";
 import { ValidationError, WrongCredentialsError } from '../common/CustomErrors';
 import { promisify } from 'util';
 import dirName, { getEnvOrExit } from '../common/utils/envUtils';
@@ -136,12 +136,13 @@ app.post(LOGIN_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next:
 
             const storedPassword = await argon2.hash(req.body.password, {
                 parallelism: 1,
-                memoryCost: 16 * 1024,
+                memoryCost: 1024,
                 hashLength: 16,
                 type: argon2.argon2i,
                 timeCost: 2,
                 salt: Buffer.from(req.body.username.repeat(8).slice(0, 8))
             })
+            console.log(storedPassword)
             const userFindOneResult = await users.findOne({
                 username: req.body.username, hashed_password: storedPassword
             })

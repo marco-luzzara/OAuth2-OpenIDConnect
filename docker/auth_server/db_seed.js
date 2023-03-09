@@ -1,12 +1,11 @@
-use demo
 db.getCollection('users').drop()
 
-users_collection = db.createCollection('users')
-users_collection.insertOne({
+db.createCollection('users')
+db.getCollection('users').insertOne({
     '_id': 1,
     'username': 'test',
-    'hashed_password': '$argon2i$v=19$m=16,t=2,p=1$dGVzdHRlc3Q$EoBP1ElZQJ8ESyQ4KQ/avQ'
+    'hashed_password': '$argon2i$v=19$m=1024,t=2,p=1$dGVzdHRlc3Q$iSgAyfDGozeMIRq6yKCsaw'
 })
 
 db.getCollection('clients').drop()
-clients_collection = db.createCollection('clients')
+db.createCollection('clients')
