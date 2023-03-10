@@ -12,15 +12,15 @@ import { useLogger } from '../common/utils/loggingUtils';
 import RedisStore from "connect-redis"
 import session from "express-session"
 import { createClient } from "redis"
-import { ClientLoginBody } from './model/routes/login';
+import { ClientLoginBody, ClientLoginQueryParams } from './model/routes/login';
 import argon2 from "argon2";
-import { ValidationError, WrongCredentialsError } from '../common/CustomErrors';
+import { UnregisteredApplication, UserNotAuthenticatedError, ValidationError, WrongCredentialsError } from '../common/CustomErrors';
 import { promisify } from 'util';
 import dirName, { getEnvOrExit } from '../common/utils/envUtils';
 import path from 'path'
-import querystring from 'querystring'
-import { ClientAuthorizationQueryParams } from './model/routes/authorization';
+import { AuthRequestParams, ClientAuthorizationQueryParams, ValidatedAuthRequestParams } from './model/routes/authorization';
 import { LogoutQueryParams } from './model/routes/logout';
+import { Scope } from './model/db/Scope';
 
 // *********************** express setup
 const app: Express = express();
@@ -47,6 +47,7 @@ const mongoClient = new MongoClient(dbConnectionString);
 const database = mongoClient.db('demo');
 const users = database.collection<User>('users');
 const clients = database.collection<Client>('clients');
+const scopes = database.collection<Scope>('scopes');
 
 // *********************** redis for sessions storage
 let redisClient = createClient({
@@ -85,6 +86,16 @@ const LOGOUT_ROUTE = '/logout'
 const CLIENT_ROUTE = '/client'
 const AUTHORIZE_ROUTE = '/authorize'
 const AUTH_DIALOG_ROUTE = '/auth_dialog'
+const AUTHORIZATION_ROUTE = '/authorization'
+
+// *********************** auth middleware
+
+function isAuthenticated(req: Request, res: Response, next: NextFunction) {
+    if (!req.session.username)
+        next(new UserNotAuthenticatedError())
+    else
+        next()
+}
 
 // *********************** routes
 
@@ -109,22 +120,81 @@ app.post(CLIENT_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next
 app.get(AUTHORIZE_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) =>
     await validateQueryParams(req, res, next, ClientAuthorizationQueryParams,
         async (req, res: Response, next: NextFunction) => {
-            const callback = `${baseUrl}${AUTH_DIALOG_ROUTE}?${querystring.stringify(req.query)}`
+            const callback = `${baseUrl}${AUTH_DIALOG_ROUTE}?${new URLSearchParams(req.query).toString()}`
             if (req.session.username)
                 res.render('choose_login', {
                     callback,
+                    logoutRoute: LOGOUT_ROUTE,
+                    loginRoute: LOGIN_ROUTE,
                     username: req.session.username
-                });
+                },);
             else
                 res.render('login', {
-                    callback
+                    callback,
+                    loginRoute: LOGIN_ROUTE
                 })
         })
 ));
 
-app.get(AUTH_DIALOG_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) =>
+async function getValidatedAuthParams(params: AuthRequestParams): Promise<ValidatedAuthRequestParams> {
+    const foundClient = await clients.findOne({ clientId: params.client_id },
+        { projection: { 'applicationName': 1, 'redirectUrls': 1 } })
+
+    if (foundClient === null)
+        throw new UnregisteredApplication()
+
+    const requestScopes = params.scope.split('+')
+    const foundScopes = await (scopes.find({
+        "name": {
+            "$in": requestScopes
+        }
+    })).toArray()
+
+    // ******* query params validations
+    let validationErrors = []
+    if (!foundClient.redirectUrls.includes(params.redirect_uri))
+        validationErrors.push('redirect_uri does not correspond to the registration uri')
+
+    if (foundScopes.length === 0 || foundScopes.length < requestScopes.length)
+        validationErrors.push('one or more of the specified scopes are not acceptable')
+
+    if (validationErrors.length > 0)
+        throw new ValidationError(validationErrors)
+    // ******* 
+
+    return { ...params, applicationName: foundClient.applicationName, scope: foundScopes as Scope[] }
+}
+
+app.get(AUTH_DIALOG_ROUTE, isAuthenticated, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) =>
     await validateQueryParams(req, res, next, ClientAuthorizationQueryParams,
         async (req, res: Response, next: NextFunction) => {
+            const authParams = await getValidatedAuthParams(req.query)
+
+            res.render('auth_dialog', {
+                authParams
+            })
+        })
+))
+
+app.get(AUTHORIZATION_ROUTE, isAuthenticated, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) =>
+    await validateQueryParams(req, res, next, ClientAuthorizationQueryParams,
+        async (req, res: Response, next: NextFunction) => {
+            const authParams = await getValidatedAuthParams(req.query)
+
+            // TODO
+        })
+))
+
+app.get(LOGIN_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) =>
+    await validateQueryParams(req, res, next, ClientLoginQueryParams,
+        async (req, res: Response, next: NextFunction) => {
+            if (req.session.username)
+                return res.redirect(req.query.callback)
+
+            res.render('login', {
+                loginRoute: LOGIN_ROUTE,
+                callback: req.query.callback
+            })
         })
 ))
 
@@ -132,7 +202,7 @@ app.post(LOGIN_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next:
     await validateBody(req, res, next, ClientLoginBody,
         async (req, res: Response, next: NextFunction) => {
             if (req.session.username)
-                return res.redirect('back')
+                req.session.username = undefined
 
             const storedPassword = await argon2.hash(req.body.password, {
                 parallelism: 1,
@@ -159,12 +229,12 @@ app.post(LOGIN_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next:
 app.get(LOGOUT_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) =>
     await validateQueryParams(req, res, next, LogoutQueryParams,
         async (req, res: Response, next: NextFunction) => {
-            await promisify(req.session.destroy)()
+            req.session.username = undefined
             res.redirect(req.query.callback)
         })
 ))
 
-// app.use('/', express.static('./auth_server/static'))
+// app.use('/', express.static('./auth_server/pages'))
 
 // error handling middleware
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
@@ -173,6 +243,8 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
             return res.status(404).send(err.message)
         case ValidationError:
             return res.status(400).json((err as ValidationError).validationRules)
+        case UserNotAuthenticatedError:
+            return res.status(401).send(err.message)
         default:
             console.log(err)
             return res.status(500).send(err.message)

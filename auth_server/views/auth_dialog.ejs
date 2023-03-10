@@ -1,7 +1,21 @@
 <html>
 
 <body>
-    hello
+    <main class="mdl-layout__content">
+        <section class="section--center mdl-grid mdl-grid--no-spacing mdl-shadow--2dp">
+            <h4 class="mdl-cell mdl-cell--12-col"><%= applicationName %> needs the following permissions</h4>
+            <% for (let scope of authParams.scope) { %>
+            <div class="section__text mdl-cell mdl-cell--10-col-desktop mdl-cell--6-col-tablet mdl-cell--3-col-phone">
+                <h5><% scope.name %></h5>
+                <% scope.description %>
+            </div>
+            <% } %>
+            <div class="mdl-card__actions">
+                <a href="#" class="mdl-button">Allow</a>
+                <a href="#" class="mdl-button">Deny</a>
+            </div>
+        </section>
+    </main>
 </body>
 
 </html>
