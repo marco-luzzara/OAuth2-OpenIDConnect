@@ -12,19 +12,19 @@
     </style>
     <script>
         async function loginAsCurrentUser() {
-            window.location.href = '<%= callback %>'
+            window.location.href = '<%- callback %>'
         }
 
         // the logout page firstly redirects to login, which accepts a callback, 
         // that will be the current callback
         async function redirectToLogout() {
             const loginCallbackParams = new URLSearchParams({
-                callback: '<%= callback %>'
+                callback: '<%- callback %>'
             }).toString()
             const logoutCallbackParams = new URLSearchParams({
-                callback: `${window.location.origin}<%= loginRoute %>?${loginCallbackParams}`
+                callback: `${window.location.origin}<%- loginRoute %>?${loginCallbackParams}`
             }).toString()
-            window.location.href = `${window.location.origin}<%= logoutRoute %>?${logoutCallbackParams}`
+            window.location.href = `${window.location.origin}<%- logoutRoute %>?${logoutCallbackParams}`
         }
     </script>
 </head>

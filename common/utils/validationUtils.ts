@@ -14,7 +14,7 @@ export function exitIfEmpty(expression: string, name: string) {
 // https://stackoverflow.com/a/55032655/5587393
 type Modify<T, R> = Omit<T, keyof R> & R;
 
-function validateObject<P extends t.Props>(validationType: t.TypeC<P>, obj: any, res: Response):
+function validateObject<P extends t.Props>(validationType: t.TypeC<P>, obj: any):
     { [K in keyof P]: t.TypeOf<P[K]>; } {
     const propValidated = validationType.decode(obj)
     if (propValidated._tag === 'Left')
@@ -32,7 +32,7 @@ export async function validateBody<P extends t.Props>(
         }
     }>, res: Response, next: NextFunction) => Promise<void>
 ) {
-    const validationResult = validateObject(bodyValidationType, req.body, res)
+    const validationResult = validateObject(bodyValidationType, req.body)
     req.body = validationResult
     await handler(req, res, next)
 }
@@ -46,7 +46,7 @@ export async function validateQueryParams<P extends t.Props>(
         }
     }>, res: Response, next: NextFunction) => Promise<void>
 ) {
-    const validationResult = validateObject(queryValidationType, req.query, res)
+    const validationResult = validateObject(queryValidationType, req.query)
     req.query = validationResult
     await handler(req as Modify<Request, {
         query: {
@@ -75,7 +75,7 @@ export async function validateBodyAndQueryParams<PBody extends t.Props, PQuery e
     const bodyAndQueryValidationResult = validateObject(bodyAndQueryValidationTypes, {
         body: req.body,
         query: req.query
-    }, res)
+    })
     req.body = bodyAndQueryValidationResult.body
     req.query = bodyAndQueryValidationResult.query
 

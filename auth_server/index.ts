@@ -21,6 +21,7 @@ import path from 'path'
 import { AuthRequestParams, ClientAuthorizationQueryParams, ValidatedAuthRequestParams } from './model/routes/authorization';
 import { LogoutQueryParams } from './model/routes/logout';
 import { Scope } from './model/db/Scope';
+import cors from 'cors'
 
 // *********************** express setup
 const app: Express = express();
@@ -121,6 +122,7 @@ app.get(AUTHORIZE_ROUTE, catchAsyncErrors(async (req: Request, res: Response, ne
     await validateQueryParams(req, res, next, ClientAuthorizationQueryParams,
         async (req, res: Response, next: NextFunction) => {
             const callback = `${baseUrl}${AUTH_DIALOG_ROUTE}?${new URLSearchParams(req.query).toString()}`
+
             if (req.session.username)
                 res.render('choose_login', {
                     callback,
@@ -198,7 +200,7 @@ app.get(LOGIN_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next: 
         })
 ))
 
-app.post(LOGIN_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) =>
+app.post(LOGIN_ROUTE, cors(), catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) =>
     await validateBody(req, res, next, ClientLoginBody,
         async (req, res: Response, next: NextFunction) => {
             if (req.session.username)
