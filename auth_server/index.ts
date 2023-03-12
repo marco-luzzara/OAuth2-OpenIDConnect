@@ -8,7 +8,7 @@ import { generateRandomHexString, generateUUIDv1 } from '../common/utils/generat
 import { catchAsyncErrors } from '../common/utils/errorHandlingUtils';
 import { buildClientRegistrationResponse, ClientRegistrationBody } from './model/routes/registration';
 import { useLogger } from '../common/utils/loggingUtils';
-// import cookieParser from 'cookie-parser'
+import cookieParser from 'cookie-parser'
 import RedisStore from "connect-redis"
 import session from "express-session"
 import { createClient } from "redis"
@@ -29,7 +29,7 @@ app.set('views', path.join(dirName(import.meta), 'views'))
 app.set('view engine', 'ejs')
 app.use(express.json()) // for parsing application/json
 app.use(express.urlencoded({ extended: true })) // for parsing application/x-www-form-urlencoded
-// app.use(cookieParser())
+app.use(cookieParser())
 
 // *********************** logging
 useLogger(app)
@@ -85,6 +85,7 @@ app.use(session(sessionConfig))
 const LOGIN_ROUTE = '/login'
 const LOGOUT_ROUTE = '/logout'
 const CLIENT_ROUTE = '/client'
+const SCOPES_ROUTE = '/scopes'
 const AUTHORIZE_ROUTE = '/authorize'
 const AUTH_DIALOG_ROUTE = '/auth_dialog'
 const AUTHORIZATION_ROUTE = '/authorization'
@@ -117,6 +118,13 @@ app.post(CLIENT_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next
             res.status(201).json(buildClientRegistrationResponse(newClient));
         })
 ))
+
+app.get(SCOPES_ROUTE, cors(), catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) => {
+    const scopesList = (await scopes.find({}, {
+        projection: { 'name': 1 }
+    }).toArray()).map(scope => scope.name)
+    res.json(scopesList)
+}))
 
 app.get(AUTHORIZE_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) =>
     await validateQueryParams(req, res, next, ClientAuthorizationQueryParams,
@@ -231,14 +239,16 @@ app.post(LOGIN_ROUTE, cors(), catchAsyncErrors(async (req: Request, res: Respons
 app.get(LOGOUT_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) =>
     await validateQueryParams(req, res, next, LogoutQueryParams,
         async (req, res: Response, next: NextFunction) => {
+            // TODO: methods like session.destroy do not work (?). session object just have 
             req.session.username = undefined
+
             res.redirect(req.query.callback)
         })
 ))
 
 // app.use('/', express.static('./auth_server/pages'))
 
-// error handling middleware
+// *********************** error handling
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
     switch (err.constructor) {
         case WrongCredentialsError:
@@ -252,6 +262,8 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
             return res.status(500).send(err.message)
     }
 })
+
+// *********************** server start
 
 app.listen(parseInt(port), host, () => {
     console.log(`⚡️[server]: Server is running at ${host}:${port}`);
