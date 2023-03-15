@@ -9,55 +9,77 @@
             background-color: rgb(206, 206, 206);
         }
 
-        main {
-            align-items: center;
+        .mdl-card__title {
             justify-content: center;
         }
-    </style>
-    <script>
-        (async function () {
-            const scopesResponse = await fetch('<%- authServerEndpoint %>/scopes')
-            const scopes = await scopesResponse.json()
 
-            window.addEventListener('load', (evt) => {
-                for (const scope in scopes) {
-                    const newItemHtml = `
-                <li class="mdl-list__item">
-                    <span class="mdl-list__item-primary-content">
-                        ${scope}
-                    </span>
-                    <span class="mdl-list__item-secondary-action">
-                        <label class="mdl-checkbox mdl-js-checkbox mdl-js-ripple-effect" for="cb-${scope}">
-                            <input type="checkbox" id="cb-${scope}" class="mdl-checkbox__input" checked />
-                        </label>
-                    </span>
-                </li>`.trim()
-                    let template = document.createElement('template');
-                    template.innerHTML = newItemHtml;
-
-                    document.getElementById('ul-scopes').appendChild(template.content.firstChild)
-                }
-
-
-            })
-        })()
-        function startAuthFlow() {
-            window.location.href = '<%=authServerEndpoint %>'
+        .mdl-grid {
+            margin-top: 10%;
+            max-width: 30%;
         }
-    </script>
+
+        .mdl-card__actions {
+            text-align: center;
+        }
+    </style>
 </head>
 
 <body>
     <div class="mdl-layout mdl-js-layout">
+        <header class="mdl-layout__header">
+            <div class="mdl-layout__header-row">
+                <span class="mdl-layout-title">My test application</span>
+            </div>
+        </header>
         <main class="mdl-layout__content">
-            <p>Choose the scopes: </p>
-            <ul id="ul-scopes" class="demo-list-control mdl-list">
-            </ul>
-            <button class="mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect">
-                Start OAuth Flow
-            </button>
+            <div class="mdl-grid">
+                <div class="mdl-card mdl-cell mdl-cell--12-col mdl-shadow--8dp" id="card-oauth-flow">
+                    <div class="mdl-card__title">
+                        <h2 class="mdl-card__title-text">Get data from resource server</h2>
+                    </div>
+                    <div class="mdl-card__supporting-text">
+                        <h5>Available Scopes</h5>
+                        <ul id="ul-scopes" class="demo-list-control mdl-list">
+                            <% for (let scope of scopes) { %>
+                            <li class="mdl-list__item">
+                                <span class="mdl-list__item-primary-content">
+                                    <label class="mdl-checkbox mdl-js-checkbox mdl-js-ripple-effect"
+                                        for="cb-scope-<%- scope %>">
+                                        <input type="checkbox" id="cb-scope-<%- scope %>" class="mdl-checkbox__input"
+                                            checked />
+                                        <span class="mdl-checkbox__label"><%= scope %></span>
+                                    </label>
+                                </span>
+                            </li>
+                            <% } %>
+                        </ul>
+                    </div>
+                    <div class="mdl-card__actions">
+                        <button class="mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect"
+                            onclick="startOAuthFlow()">
+                            Start OAuth Flow
+                        </button>
+                    </div>
+                </div>
+            </div>
         </main>
     </div>
+    <script>
+        function startOAuthFlow() {
+            const checkedScopes = [...document.querySelectorAll('#ul-scopes input[type="checkbox"]')]
+                .filter(node => node.checked).map(node => node.id.substr(9))
+
+            const authorizeParams = {
+                client_id: '<%- clientId %>',
+                response_type: 'code',
+                redirect_uri: '<%- redirectUri %>',
+                scope: checkedScopes.join('+'),
+                state: '<%- state %>'
+            }
+
+            window.location.href = `<%- authServerEndpoint %>/authorize?${new URLSearchParams(authorizeParams).toString()}`
+        }
+    </script>
 </body>
 
 </html>

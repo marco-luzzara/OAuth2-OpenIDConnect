@@ -63,8 +63,8 @@ let redisStore = new RedisStore({
 // *********************** session middleware
 const sessionConfig = {
     store: redisStore,
-    resave: false, // required: force lightweight session keep alive (touch)
-    saveUninitialized: false, // recommended: only save session when data exists
+    resave: true, // required: force lightweight session keep alive (touch)
+    saveUninitialized: true, // recommended: only save session when data exists
     secret: sessionSecret,
     cookie: {
         secure: "auto" as "auto", // determine the secure over https depending on the connection config
@@ -101,6 +101,9 @@ function isAuthenticated(req: Request, res: Response, next: NextFunction) {
 
 // *********************** routes
 
+/**
+ * register a new user
+ */
 app.post(CLIENT_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) =>
     await validateBody(req, res, next, ClientRegistrationBody,
         async (req, res: Response, next: NextFunction) => {
@@ -119,6 +122,9 @@ app.post(CLIENT_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next
         })
 ))
 
+/**
+ * returns the available scopes
+ */
 app.get(SCOPES_ROUTE, cors(), catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) => {
     const scopesList = (await scopes.find({}, {
         projection: { 'name': 1 }
@@ -126,6 +132,10 @@ app.get(SCOPES_ROUTE, cors(), catchAsyncErrors(async (req: Request, res: Respons
     res.json(scopesList)
 }))
 
+/**
+ * starts the flow, by first asking the user if he wants to login with a new account or continue
+ * with the current account.
+ */
 app.get(AUTHORIZE_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) =>
     await validateQueryParams(req, res, next, ClientAuthorizationQueryParams,
         async (req, res: Response, next: NextFunction) => {
@@ -175,6 +185,9 @@ async function getValidatedAuthParams(params: AuthRequestParams): Promise<Valida
     return { ...params, applicationName: foundClient.applicationName, scope: foundScopes as Scope[] }
 }
 
+/**
+ * shows the user a dialog that asks for permission on behalf of the application
+ */
 app.get(AUTH_DIALOG_ROUTE, isAuthenticated, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) =>
     await validateQueryParams(req, res, next, ClientAuthorizationQueryParams,
         async (req, res: Response, next: NextFunction) => {
@@ -186,7 +199,10 @@ app.get(AUTH_DIALOG_ROUTE, isAuthenticated, catchAsyncErrors(async (req: Request
         })
 ))
 
-app.get(AUTHORIZATION_ROUTE, isAuthenticated, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) =>
+/**
+ * process the oauth flow (like creating the authorization flow)
+ */
+app.post(AUTHORIZATION_ROUTE, isAuthenticated, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) =>
     await validateQueryParams(req, res, next, ClientAuthorizationQueryParams,
         async (req, res: Response, next: NextFunction) => {
             const authParams = await getValidatedAuthParams(req.query)
@@ -195,6 +211,9 @@ app.get(AUTHORIZATION_ROUTE, isAuthenticated, catchAsyncErrors(async (req: Reque
         })
 ))
 
+/**
+ * user login page
+ */
 app.get(LOGIN_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) =>
     await validateQueryParams(req, res, next, ClientLoginQueryParams,
         async (req, res: Response, next: NextFunction) => {
@@ -208,6 +227,9 @@ app.get(LOGIN_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next: 
         })
 ))
 
+/**
+ * user login
+ */
 app.post(LOGIN_ROUTE, cors(), catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) =>
     await validateBody(req, res, next, ClientLoginBody,
         async (req, res: Response, next: NextFunction) => {
@@ -230,17 +252,25 @@ app.post(LOGIN_ROUTE, cors(), catchAsyncErrors(async (req: Request, res: Respons
             if (userFindOneResult === null)
                 throw new WrongCredentialsError()
 
+            // https://www.npmjs.com/package/express-session#user-content-user-login
+            await promisify(req.session.regenerate).call(req.session)
             req.session.username = req.body.username
+            await promisify(req.session.save).call(req.session)
 
             res.status(200).end()
         })
 ))
 
+/**
+ * user logout
+ */
 app.get(LOGOUT_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) =>
     await validateQueryParams(req, res, next, LogoutQueryParams,
         async (req, res: Response, next: NextFunction) => {
-            // TODO: methods like session.destroy do not work (?). session object just have 
+            // https://www.npmjs.com/package/express-session#user-content-user-login
             req.session.username = undefined
+            await promisify(req.session.save).call(req.session)
+            await promisify(req.session.regenerate).call(req.session)
 
             res.redirect(req.query.callback)
         })
