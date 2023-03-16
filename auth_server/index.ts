@@ -18,10 +18,11 @@ import { UnregisteredApplication, UserNotAuthenticatedError, ValidationError, Wr
 import { promisify } from 'util';
 import dirName, { getEnvOrExit } from '../common/utils/envUtils';
 import path from 'path'
-import { AuthRequestParams, ClientAuthorizationQueryParams, ValidatedAuthRequestParams } from './model/routes/authorization';
+import { AuthQueryParamsWithUserChoice, AuthRequestParams, ClientAuthorizationQueryParams, OAuthErrorResponse, ValidatedAuthRequestParams } from './model/routes/authorization';
 import { LogoutQueryParams } from './model/routes/logout';
 import { Scope } from './model/db/Scope';
 import cors from 'cors'
+import { AccessTokenExchangeBody } from './model/routes/access_token_exchange';
 
 // *********************** express setup
 const app: Express = express();
@@ -86,9 +87,10 @@ const LOGIN_ROUTE = '/login'
 const LOGOUT_ROUTE = '/logout'
 const CLIENT_ROUTE = '/client'
 const SCOPES_ROUTE = '/scopes'
-const AUTHORIZE_ROUTE = '/authorize'
-const AUTH_DIALOG_ROUTE = '/auth_dialog'
-const AUTHORIZATION_ROUTE = '/authorization'
+const AUTHORIZE_ROUTE = '/oauth/authorize'
+const AUTH_DIALOG_ROUTE = '/oauth/auth_dialog'
+const AUTHORIZATION_ROUTE = '/oauth/authorization'
+const ACCESS_TOKEN_ROUTE = '/oauth/access_token'
 
 // *********************** auth middleware
 
@@ -156,33 +158,43 @@ app.get(AUTHORIZE_ROUTE, catchAsyncErrors(async (req: Request, res: Response, ne
         })
 ));
 
-async function getValidatedAuthParams(params: AuthRequestParams): Promise<ValidatedAuthRequestParams> {
-    const foundClient = await clients.findOne({ clientId: params.client_id },
-        { projection: { 'applicationName': 1, 'redirectUrls': 1 } })
-
-    if (foundClient === null)
-        throw new UnregisteredApplication()
-
-    const requestScopes = params.scope.split('+')
+async function getValidatedScopes(scope: string): Promise<Scope[] | null> {
+    const requestScopes = scope.split('+')
     const foundScopes = await (scopes.find({
         "name": {
             "$in": requestScopes
         }
     })).toArray()
 
-    // ******* query params validations
-    let validationErrors = []
-    if (!foundClient.redirectUrls.includes(params.redirect_uri))
-        validationErrors.push('redirect_uri does not correspond to the registration uri')
-
     if (foundScopes.length === 0 || foundScopes.length < requestScopes.length)
-        validationErrors.push('one or more of the specified scopes are not acceptable')
+        return null
 
-    if (validationErrors.length > 0)
-        throw new ValidationError(validationErrors)
-    // ******* 
+    return foundScopes
+}
 
-    return { ...params, applicationName: foundClient.applicationName, scope: foundScopes as Scope[] }
+/**
+ * validate the oauth params
+ * @param params the oauth params
+ * @returns the validated and cleaned oauth params or the error code + error description
+ */
+async function getValidatedAuthParams(params: AuthRequestParams):
+    Promise<ValidatedAuthRequestParams | OAuthErrorResponse> {
+    const foundClient = await clients.findOne({ clientId: params.client_id },
+        { projection: { 'applicationName': 1, 'redirectUrls': 1 } })
+
+    if (foundClient === null)
+        throw new UnregisteredApplication()
+
+    if (!foundClient.redirectUrls.includes(params.redirect_uri))
+        return new OAuthErrorResponse(params.redirect_uri, params.state,
+            'invalid_request', 'redirect_uri does not correspond to the registration uri')
+
+    const foundScopes = await getValidatedScopes(params.scope)
+    if (foundScopes === null)
+        return new OAuthErrorResponse(params.redirect_uri, params.state,
+            'invalid_scope', 'one or more of the specified scopes are not acceptable')
+
+    return { ...params, applicationName: foundClient.applicationName, scope: foundScopes }
 }
 
 /**
@@ -191,21 +203,34 @@ async function getValidatedAuthParams(params: AuthRequestParams): Promise<Valida
 app.get(AUTH_DIALOG_ROUTE, isAuthenticated, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) =>
     await validateQueryParams(req, res, next, ClientAuthorizationQueryParams,
         async (req, res: Response, next: NextFunction) => {
-            const authParams = await getValidatedAuthParams(req.query)
+            const authValidationResult = await getValidatedAuthParams(req.query)
+            if (authValidationResult instanceof OAuthErrorResponse) {
+                res.redirect(authValidationResult.buildCompleteUri())
+                return;
+            }
 
             res.render('auth_dialog', {
-                authParams
+                authParams: authValidationResult
             })
         })
 ))
 
 /**
- * process the oauth flow (like creating the authorization flow)
+ * process the oauth flow (like creating the authorization code) and redirect to redirect_uri
  */
-app.post(AUTHORIZATION_ROUTE, isAuthenticated, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) =>
-    await validateQueryParams(req, res, next, ClientAuthorizationQueryParams,
+app.get(AUTHORIZATION_ROUTE, isAuthenticated, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) =>
+    await validateQueryParams(req, res, next, AuthQueryParamsWithUserChoice,
         async (req, res: Response, next: NextFunction) => {
-            const authParams = await getValidatedAuthParams(req.query)
+            const authParams = await getValidatedAuthParams(req.query as AuthRequestParams)
+
+            // TODO
+        })
+))
+
+app.post(ACCESS_TOKEN_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) =>
+    await validateBody(req, res, next, AccessTokenExchangeBody,
+        async (req, res: Response, next: NextFunction) => {
+
 
             // TODO
         })

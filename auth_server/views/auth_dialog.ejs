@@ -46,17 +46,28 @@
                         </ul>
                     </div>
                     <div class="mdl-card__actions">
-                        <a href="#" class="mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect" onclick="">
+                        <button href="#" class="mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect"
+                            onclick="">
                             Allow
-                        </a>
-                        <a href="#" class="mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect" onclick="">
+                        </button>
+                        <button href="#" class="mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect"
+                            onclick="">
                             Deny
-                        </a>
+                        </button>
                     </div>
                 </div>
             </div>
         </main>
     </div>
+    <script>
+        function redirectWithAllowResponse() {
+
+        }
+
+        function redirectWithDenyResponse() {
+            window.location.href = '<%- authParams.redirect_uri %>?error=access_denied'
+        }
+    </script>
 </body>
 
 </html>

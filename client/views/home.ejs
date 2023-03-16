@@ -77,7 +77,7 @@
                 state: '<%- state %>'
             }
 
-            window.location.href = `<%- authServerEndpoint %>/authorize?${new URLSearchParams(authorizeParams).toString()}`
+            window.location.href = `<%- authServerEndpoint %>/oauth/authorize?${new URLSearchParams(authorizeParams).toString()}`
         }
     </script>
 </body>

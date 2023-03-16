@@ -10,6 +10,13 @@ export const ClientAuthorizationQueryParams = t.type({
     state: t.string
 })
 
+export const AuthQueryParamsWithUserChoice = t.type({
+    ...ClientAuthorizationQueryParams.props,
+    ...t.type({
+        user_choice: t.union([t.literal('allow'), t.literal('deny')])
+    }).props
+})
+
 export type AuthRequestParamsShared = {
     response_type: "code" | "implicit";
     client_id: string;
@@ -22,4 +29,27 @@ export type AuthRequestParams = AuthRequestParamsShared & {
 export type ValidatedAuthRequestParams = AuthRequestParamsShared & {
     applicationName: string,
     scope: Scope[]
+}
+
+export class OAuthErrorResponse {
+    readonly redirectUri: string
+    readonly state: string
+    readonly error: string
+    readonly errorDescription: string
+
+    constructor(redirectUri: string, state: string, error: string, errorDescription: string) {
+        this.redirectUri = redirectUri
+        this.state = state
+        this.error = error
+        this.errorDescription = errorDescription
+    }
+
+    buildCompleteUri(): string {
+        const errorQueryParams = new URLSearchParams({
+            error: this.error,
+            error_description: this.errorDescription,
+            state: this.state
+        }).toString()
+        return `${this.redirectUri}?${errorQueryParams}`
+    }
 }

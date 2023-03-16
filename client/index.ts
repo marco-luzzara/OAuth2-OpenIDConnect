@@ -10,6 +10,10 @@ import { createClient } from 'redis';
 import RedisStore from 'connect-redis';
 import session from 'express-session';
 import { promisify } from 'util';
+import { catchAsyncErrors } from '../common/utils/errorHandlingUtils';
+import { validateQueryParams } from '../common/utils/validationUtils';
+import { AuthorizationCallbackParams } from './model/routes/auth_callback';
+import { ValidationError } from '../common/CustomErrors';
 
 // *********************** express setup
 const app: Express = express();
@@ -86,14 +90,29 @@ catch (err) {
 }
 
 // *********************** routes
+/**
+ * create a base64 string that concatenates a random nonce and the base-64 encoded url to redirect the user
+ * @param afterAuthUrl the callback url to redirect the client after the auth flow completes
+ * @returns a base64 string
+ */
 function encodeOAuthStateParam(afterAuthUrl: string): string {
     const nonce = crypto.randomBytes(16).toString('base64')
     return `${nonce}${Buffer.from(afterAuthUrl).toString('base64')}`
 }
 
+/**
+ * decode the state param to retrieve the redirect url
+ * @param state the state got from the url
+ */
+function decodeOAuthStateParam(state: string): string {
+    const encodedUrl = state.substring(24) // skip 24 = 16 bytes in base64 for the nonce
+    return Buffer.from(encodedUrl, 'base64').toString('ascii')
+}
+
 app.get(HOME_ROUTE, async (req: Request, res: Response, next: NextFunction) => {
     const scopesResponse = await fetch(`${authServerEndpoint}/scopes`)
     const scopes = await scopesResponse.json()
+
     await promisify(req.session.regenerate).call(req.session)
     req.session.oauthState = encodeOAuthStateParam(`${baseUrl}${USER_DATA_ROUTE}`)
     await promisify(req.session.save).call(req.session)
@@ -107,11 +126,16 @@ app.get(HOME_ROUTE, async (req: Request, res: Response, next: NextFunction) => {
     });
 });
 
-app.get(AUTH_CALLBACK_ROUTE, async (req: Request, res: Response, next: NextFunction) => {
-    res.render(`home`, {
-        authServerEndpoint
-    });
-});
+app.get(AUTH_CALLBACK_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) =>
+    await validateQueryParams(req, res, next, AuthorizationCallbackParams,
+        async (req, res: Response, next: NextFunction) => {
+            if (req.query.state !== req.session.oauthState)
+                throw new ValidationError('state param has been manipulated')
+            const redirectUri = decodeOAuthStateParam(req.query.state)
+
+            res.redirect(redirectUri)
+        })
+));
 
 app.get(USER_DATA_ROUTE, async (req: Request, res: Response, next: NextFunction) => {
     res.render(`home`, {
