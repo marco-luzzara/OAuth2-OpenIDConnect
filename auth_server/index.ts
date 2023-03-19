@@ -23,6 +23,7 @@ import { LogoutQueryParams } from './model/routes/logout';
 import { Scope } from './model/db/Scope';
 import cors from 'cors'
 import { AccessTokenExchangeBody } from './model/routes/access_token_exchange';
+import jwt from 'jsonwebtoken'
 
 // *********************** express setup
 const app: Express = express();
@@ -43,6 +44,7 @@ const baseUrl = `${networkProtocol}://${host}:${port}`
 const dbConnectionString = getEnvOrExit('DB_CONNECTION_STRING')
 const sessionStorageConnString = getEnvOrExit('SESSION_STORAGE_CONNECTION_STRING')
 const sessionSecret = getEnvOrExit('SESSION_SECRET')
+const privateKey = getEnvOrExit('PRIVATE_KEY')
 
 // *********************** mongo setup
 const mongoClient = new MongoClient(dbConnectionString);
@@ -221,9 +223,32 @@ app.get(AUTH_DIALOG_ROUTE, isAuthenticated, catchAsyncErrors(async (req: Request
 app.get(AUTHORIZATION_ROUTE, isAuthenticated, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) =>
     await validateQueryParams(req, res, next, AuthQueryParamsWithUserChoice,
         async (req, res: Response, next: NextFunction) => {
-            const authParams = await getValidatedAuthParams(req.query as AuthRequestParams)
+            if (req.query.user_choice === 'deny') {
+                res.redirect(new OAuthErrorResponse(req.query.redirect_uri, req.query.state,
+                    'access_denied', 'The user did not allow the request').buildCompleteUri())
+                return
+            }
 
-            // TODO
+            const authValidationResult = await getValidatedAuthParams(req.query)
+            if (authValidationResult instanceof OAuthErrorResponse) {
+                res.redirect(authValidationResult.buildCompleteUri())
+                return
+            }
+
+            const MAX_AUTH_CODE_LIFETIME = 60 // 60 seconds
+            const authCode = jwt.sign({
+                client_id: req.query.client_id,
+                redirect_uri: req.query.redirect_uri,
+                username: req.session.username,
+                id: generateUUIDv1()
+            }, privateKey, {
+                algorithm: 'RS256',
+                issuer: 'auth-server',
+                expiresIn: MAX_AUTH_CODE_LIFETIME
+            })
+
+            // TODO: generate redirect uri with state and auth code
+            // res.redirect(req.query.redirect_uri)
         })
 ))
 
@@ -327,6 +352,8 @@ app.listen(parseInt(port), host, () => {
 asyncExitHook(async () => {
     console.log('Closing MongoDB client');
     await mongoClient.close()
+    console.log('Disconnecting Redis client');
+    await redisClient.disconnect()
 }, {
     minimumWait: 300
 });

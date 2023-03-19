@@ -164,8 +164,8 @@ app.listen(parseInt(port), host, () => {
 });
 
 asyncExitHook(async () => {
-    console.log('Closing MongoDB client');
-    // await mongoClient.close()
+    console.log('Disconnecting Redis client');
+    await redisClient.disconnect()
 }, {
     minimumWait: 300
 });
