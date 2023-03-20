@@ -46,12 +46,14 @@
                         </ul>
                     </div>
                     <div class="mdl-card__actions">
-                        <button href="#" class="mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect"
-                            onclick="">
+                        <button data-action="allow"
+                            class="mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect"
+                            onclick="redirectWithAuthCode(this)">
                             Allow
                         </button>
-                        <button href="#" class="mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect"
-                            onclick="">
+                        <button data-action="deny"
+                            class="mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect"
+                            onclick="redirectWithAuthCode(this)">
                             Deny
                         </button>
                     </div>
@@ -60,12 +62,17 @@
         </main>
     </div>
     <script>
-        function redirectWithAllowResponse() {
-
-        }
-
-        function redirectWithDenyResponse() {
-            window.location.href = '<%- authParams.redirect_uri %>?error=access_denied'
+        function redirectWithAuthCode(btn) {
+            const authorizationRoute = '<%- authorizationRoute %>'
+            const queryParams = new URLSearchParams({
+                response_type: 'code',
+                client_id: '<%- authParams.client_id %>',
+                redirect_uri: '<%- authParams.redirect_uri %>',
+                scope: '<%- authParams.scope.join("+") %>',
+                state: '<%- authParams.state %>',
+                user_choice: btn.dataset.action
+            }).toString()
+            window.location.href = `${window.location.origin}${authorizationRoute}?${queryParams}`
         }
     </script>
 </body>

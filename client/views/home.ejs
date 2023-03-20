@@ -45,8 +45,8 @@
                                 <span class="mdl-list__item-primary-content">
                                     <label class="mdl-checkbox mdl-js-checkbox mdl-js-ripple-effect"
                                         for="cb-scope-<%- scope %>">
-                                        <input type="checkbox" id="cb-scope-<%- scope %>" class="mdl-checkbox__input"
-                                            checked />
+                                        <input type="checkbox" id="cb-scope-<%- scope %>" data-scope-name="<%- scope %>"
+                                            class="mdl-checkbox__input" checked />
                                         <span class="mdl-checkbox__label"><%= scope %></span>
                                     </label>
                                 </span>
@@ -67,7 +67,7 @@
     <script>
         function startOAuthFlow() {
             const checkedScopes = [...document.querySelectorAll('#ul-scopes input[type="checkbox"]')]
-                .filter(node => node.checked).map(node => node.id.substr(9))
+                .filter(node => node.checked).map(node => node.dataset.scopeName)
 
             const authorizeParams = {
                 client_id: '<%- clientId %>',

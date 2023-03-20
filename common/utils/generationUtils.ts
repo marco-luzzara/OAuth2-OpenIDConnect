@@ -9,3 +9,8 @@ export function generateRandomHexString(length: number): string {
 export function generateUUIDv1(): string {
     return uuidv1()
 }
+
+export function generateUrlWithQueryParams(url: string, queryParams: any): string {
+    const queryParamsStr = new URLSearchParams(queryParams).toString()
+    return `${url}?${queryParamsStr}`
+}

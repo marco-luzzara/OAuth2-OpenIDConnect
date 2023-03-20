@@ -23,3 +23,9 @@ export class UserNotAuthenticatedError extends Error {
         super('User is not authenticated')
     }
 }
+
+export class AuthCodeAlreadyUsed extends Error {
+    constructor() {
+        super('the authorization code has already been used')
+    }
+}

@@ -1,4 +1,5 @@
 import * as t from 'io-ts'
+import { generateUrlWithQueryParams } from '../../../common/utils/generationUtils';
 import { HttpLink } from '../../../common/utils/io-ts-extension/refinements/Link'
 import { Scope } from '../db/Scope';
 
@@ -45,11 +46,10 @@ export class OAuthErrorResponse {
     }
 
     buildCompleteUri(): string {
-        const errorQueryParams = new URLSearchParams({
+        return generateUrlWithQueryParams(this.redirectUri, {
             error: this.error,
             error_description: this.errorDescription,
             state: this.state
-        }).toString()
-        return `${this.redirectUri}?${errorQueryParams}`
+        })
     }
 }

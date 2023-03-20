@@ -4,7 +4,7 @@ import { validateBody, validateBodyAndQueryParams, validateQueryParams } from '.
 import { asyncExitHook } from 'exit-hook';
 import { User } from './model/db/User';
 import { Client } from './model/db/Client';
-import { generateRandomHexString, generateUUIDv1 } from '../common/utils/generationUtils';
+import { generateRandomHexString, generateUrlWithQueryParams, generateUUIDv1 } from '../common/utils/generationUtils';
 import { catchAsyncErrors } from '../common/utils/errorHandlingUtils';
 import { buildClientRegistrationResponse, ClientRegistrationBody } from './model/routes/registration';
 import { useLogger } from '../common/utils/loggingUtils';
@@ -14,7 +14,7 @@ import session from "express-session"
 import { createClient } from "redis"
 import { ClientLoginBody, ClientLoginQueryParams } from './model/routes/login';
 import argon2 from "argon2";
-import { UnregisteredApplication, UserNotAuthenticatedError, ValidationError, WrongCredentialsError } from '../common/CustomErrors';
+import { AuthCodeAlreadyUsed, UnregisteredApplication, UserNotAuthenticatedError, ValidationError, WrongCredentialsError } from '../common/CustomErrors';
 import { promisify } from 'util';
 import dirName, { getEnvOrExit } from '../common/utils/envUtils';
 import path from 'path'
@@ -23,7 +23,10 @@ import { LogoutQueryParams } from './model/routes/logout';
 import { Scope } from './model/db/Scope';
 import cors from 'cors'
 import { AccessTokenExchangeBody } from './model/routes/access_token_exchange';
-import jwt from 'jsonwebtoken'
+import jwt, { JsonWebTokenError, Secret, SignOptions, TokenExpiredError, VerifyOptions } from 'jsonwebtoken'
+import { ClientRepoMongo } from './repositories/ClientRepo';
+import { UserRepoMongo } from './repositories/UserRepo';
+import { ScopeRepoMongo } from './repositories/ScopeRepo';
 
 // *********************** express setup
 const app: Express = express();
@@ -36,7 +39,7 @@ app.use(cookieParser())
 // *********************** logging
 useLogger(app)
 
-// *********************** env retrieval
+// *********************** env and const
 const networkProtocol = getEnvOrExit('NETWORK_PROTOCOL')
 const host = getEnvOrExit('HOST')
 const port = getEnvOrExit('PORT')
@@ -45,13 +48,19 @@ const dbConnectionString = getEnvOrExit('DB_CONNECTION_STRING')
 const sessionStorageConnString = getEnvOrExit('SESSION_STORAGE_CONNECTION_STRING')
 const sessionSecret = getEnvOrExit('SESSION_SECRET')
 const privateKey = getEnvOrExit('PRIVATE_KEY')
+const publicKey = getEnvOrExit('PUBLIC_KEY')
+const MAX_AUTH_CODE_LIFETIME = 60 // 60 seconds
 
 // *********************** mongo setup
 const mongoClient = new MongoClient(dbConnectionString);
 const database = mongoClient.db('demo');
-const users = database.collection<User>('users');
-const clients = database.collection<Client>('clients');
-const scopes = database.collection<Scope>('scopes');
+const userRepo = new UserRepoMongo(database.collection<User>('users'))
+const clientRepo = new ClientRepoMongo(database.collection<Client>('clients'))
+const scopeRepo = new ScopeRepoMongo(database.collection<Scope>('scopes'))
+
+// *********************** promisified functions
+const jwtSign = promisify<object, Secret, SignOptions>(jwt.sign)
+const jwtVerify = promisify<string, Secret, VerifyOptions, any>(jwt.verify)
 
 // *********************** redis for sessions storage
 let redisClient = createClient({
@@ -117,7 +126,7 @@ app.post(CLIENT_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next
                 clientId: generateUUIDv1(),
                 clientSecret: generateRandomHexString(64)
             }
-            let insertResult = await clients.insertOne(newClient)
+            let insertResult = await clientRepo.add(newClient)
 
             if (!insertResult.acknowledged)
                 throw new Error('Could not add the new client to the database')
@@ -130,9 +139,7 @@ app.post(CLIENT_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next
  * returns the available scopes
  */
 app.get(SCOPES_ROUTE, cors(), catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) => {
-    const scopesList = (await scopes.find({}, {
-        projection: { 'name': 1 }
-    }).toArray()).map(scope => scope.name)
+    const scopesList = (await scopeRepo.getAll()).map(scope => scope.name)
     res.json(scopesList)
 }))
 
@@ -143,7 +150,7 @@ app.get(SCOPES_ROUTE, cors(), catchAsyncErrors(async (req: Request, res: Respons
 app.get(AUTHORIZE_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) =>
     await validateQueryParams(req, res, next, ClientAuthorizationQueryParams,
         async (req, res: Response, next: NextFunction) => {
-            const callback = `${baseUrl}${AUTH_DIALOG_ROUTE}?${new URLSearchParams(req.query).toString()}`
+            const callback = generateUrlWithQueryParams(`${baseUrl}${AUTH_DIALOG_ROUTE}`, req.query)
 
             if (req.session.username)
                 res.render('choose_login', {
@@ -162,11 +169,7 @@ app.get(AUTHORIZE_ROUTE, catchAsyncErrors(async (req: Request, res: Response, ne
 
 async function getValidatedScopes(scope: string): Promise<Scope[] | null> {
     const requestScopes = scope.split('+')
-    const foundScopes = await (scopes.find({
-        "name": {
-            "$in": requestScopes
-        }
-    })).toArray()
+    const foundScopes = await scopeRepo.getFromNames(requestScopes)
 
     if (foundScopes.length === 0 || foundScopes.length < requestScopes.length)
         return null
@@ -181,8 +184,7 @@ async function getValidatedScopes(scope: string): Promise<Scope[] | null> {
  */
 async function getValidatedAuthParams(params: AuthRequestParams):
     Promise<ValidatedAuthRequestParams | OAuthErrorResponse> {
-    const foundClient = await clients.findOne({ clientId: params.client_id },
-        { projection: { 'applicationName': 1, 'redirectUrls': 1 } })
+    const foundClient = await clientRepo.getByClientId(params.client_id)
 
     if (foundClient === null)
         throw new UnregisteredApplication()
@@ -212,10 +214,18 @@ app.get(AUTH_DIALOG_ROUTE, isAuthenticated, catchAsyncErrors(async (req: Request
             }
 
             res.render('auth_dialog', {
+                authorizationRoute: AUTHORIZATION_ROUTE,
                 authParams: authValidationResult
             })
         })
 ))
+
+type AuthCodePayload = {
+    client_id: string,
+    redirect_uri: string,
+    username: string,
+    id: string
+}
 
 /**
  * process the oauth flow (like creating the authorization code) and redirect to redirect_uri
@@ -235,27 +245,59 @@ app.get(AUTHORIZATION_ROUTE, isAuthenticated, catchAsyncErrors(async (req: Reque
                 return
             }
 
-            const MAX_AUTH_CODE_LIFETIME = 60 // 60 seconds
-            const authCode = jwt.sign({
+            const authCodePayload: AuthCodePayload = {
                 client_id: req.query.client_id,
                 redirect_uri: req.query.redirect_uri,
-                username: req.session.username,
+                username: req.session.username!,
                 id: generateUUIDv1()
-            }, privateKey, {
+            }
+            const authCode = await jwtSign(authCodePayload, privateKey, {
                 algorithm: 'RS256',
                 issuer: 'auth-server',
                 expiresIn: MAX_AUTH_CODE_LIFETIME
             })
 
-            // TODO: generate redirect uri with state and auth code
-            // res.redirect(req.query.redirect_uri)
+            res.redirect(generateUrlWithQueryParams(req.query.redirect_uri, {
+                code: authCode,
+                state: req.query.state
+            }))
         })
 ))
 
 app.post(ACCESS_TOKEN_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) =>
     await validateBody(req, res, next, AccessTokenExchangeBody,
         async (req, res: Response, next: NextFunction) => {
+            const decodedCode: AuthCodePayload = await jwtVerify(req.body.code, publicKey, {
+                issuer: 'auth-server',
+                algorithms: ['RS256']
+            })
 
+            let codeValidationErrors = []
+            if (decodedCode.username !== req.session.username)
+                codeValidationErrors.push('the username does not correspond with the auth code owner')
+            const client = await clientRepo.getByClientId(decodedCode.client_id)
+            if (client === null)
+                codeValidationErrors.push('the client id of the authcode does not exist')
+            else {
+                if (!client.redirectUrls.includes(decodedCode.redirect_uri))
+                    codeValidationErrors.push('the redirect_uri does not correspond to the registered one')
+            }
+
+            if (codeValidationErrors.length >= 1)
+                throw new ValidationError(codeValidationErrors)
+
+            const codeKey = `auth-code:${decodedCode.id}`
+
+            // if the auth code token already exists in the cache, then it has been already used. see key set
+            if (await redisClient.exists(codeKey))
+                throw new AuthCodeAlreadyUsed()
+
+            // I store the auth code in the cache to mark it as already used. This key will automatically expire
+            // after MAX_AUTH_CODE_LIFETIME. In this timespan, the auth code token will surely expire and it 
+            // will become unavailable forever
+            await redisClient.set(codeKey, 1, {
+                'EX': MAX_AUTH_CODE_LIFETIME
+            })
 
             // TODO
         })
@@ -294,10 +336,7 @@ app.post(LOGIN_ROUTE, cors(), catchAsyncErrors(async (req: Request, res: Respons
                 timeCost: 2,
                 salt: Buffer.from(req.body.username.repeat(8).slice(0, 8))
             })
-            console.log(storedPassword)
-            const userFindOneResult = await users.findOne({
-                username: req.body.username, hashed_password: storedPassword
-            })
+            const userFindOneResult = await userRepo.getByUsernameAndPassword(req.body.username, storedPassword)
 
             if (userFindOneResult === null)
                 throw new WrongCredentialsError()
@@ -335,7 +374,7 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
             return res.status(404).send(err.message)
         case ValidationError:
             return res.status(400).json((err as ValidationError).validationRules)
-        case UserNotAuthenticatedError:
+        case UserNotAuthenticatedError || TokenExpiredError || JsonWebTokenError || AuthCodeAlreadyUsed:
             return res.status(401).send(err.message)
         default:
             console.log(err)
