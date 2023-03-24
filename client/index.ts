@@ -1,5 +1,5 @@
 import express, { Express, Request, Response, NextFunction } from 'express';
-import axios from 'axios';
+import axios, { AxiosResponse } from 'axios';
 import { useLogger } from '../common/utils/loggingUtils';
 import dirName, { getEnvOrExit } from '../common/utils/envUtils';
 import cookieParser from 'cookie-parser';
@@ -12,8 +12,11 @@ import session from 'express-session';
 import { promisify } from 'util';
 import { catchAsyncErrors } from '../common/utils/errorHandlingUtils';
 import { validateQueryParams } from '../common/utils/validationUtils';
-import { AuthorizationCallbackParams } from './model/routes/auth_callback';
+import { AccessTokenExchangeBody, AccessTokenExchangeResponse, AuthorizationCallbackParams, RefreshTokenExchangeBody } from './model/routes/access_token_exchange';
 import { ValidationError } from '../common/CustomErrors';
+import { generateUrlWithQueryParams } from '../common/utils/generationUtils';
+import { OAuthSelectScopesQueryParams, OAuthStartFlowQueryParams } from './model/routes/authorization';
+import { UnauthorizedRequest } from './model/errors';
 
 // *********************** express setup
 const app: Express = express();
@@ -26,18 +29,19 @@ app.use(cookieParser())
 // *********************** logging
 useLogger(app)
 
-// *********************** env retrieval
-const networkProtocol = getEnvOrExit('NETWORK_PROTOCOL')
-const host = getEnvOrExit('HOST')
-const port = getEnvOrExit('PORT')
-const baseUrl = `${networkProtocol}://${host}:${port}`
-const authServerEndpoint = getEnvOrExit('AUTH_SERVER_ENDPOINT')
-const sessionStorageConnString = getEnvOrExit('SESSION_STORAGE_CONNECTION_STRING')
-const sessionSecret = getEnvOrExit('SESSION_SECRET')
+// *********************** env and const
+const NETWORK_PROTOCOL = getEnvOrExit('NETWORK_PROTOCOL')
+const HOST = getEnvOrExit('HOST')
+const PORT = getEnvOrExit('PORT')
+const baseUrl = `${NETWORK_PROTOCOL}://${HOST}:${PORT}`
+const AUTH_SERVER_ENDPOINT = getEnvOrExit('AUTH_SERVER_ENDPOINT')
+const RESOURCE_SERVER_ENDPOINT = getEnvOrExit('RESOURCE_SERVER_ENDPOINT')
+const SESSION_STORAGE_CONNECTION_STRING = getEnvOrExit('SESSION_STORAGE_CONNECTION_STRING')
+const SESSION_SECRET = getEnvOrExit('SESSION_SECRET')
 
 // *********************** redis for sessions storage
 let redisClient = createClient({
-    url: sessionStorageConnString
+    url: SESSION_STORAGE_CONNECTION_STRING
 })
 await redisClient.connect()
 let redisStore = new RedisStore({
@@ -50,7 +54,7 @@ const sessionConfig = {
     store: redisStore,
     resave: true, // required: force lightweight session keep alive (touch)
     saveUninitialized: true, // recommended: only save session when data exists
-    secret: sessionSecret,
+    secret: SESSION_SECRET,
     cookie: {
         secure: "auto" as "auto", // determine the secure over https depending on the connection config
         httpOnly: true, // if true prevent client side JS from reading the cookie 
@@ -61,6 +65,10 @@ const sessionConfig = {
 declare module 'express-session' {
     interface SessionData {
         oauthState: string
+        accessToken: string,
+        tokenExpirationDate: number,
+        refreshToken: string
+        tokenType: 'Bearer'
     }
 }
 
@@ -69,15 +77,16 @@ app.use(session(sessionConfig))
 
 // *********************** route constants
 const HOME_ROUTE = '/'
+const START_OAUTH_ROUTE = '/start_oauth'
 const AUTH_CALLBACK_ROUTE = '/auth_callback'
 const USER_DATA_ROUTE = '/user_data'
 
 // *********************** client registration
 const redirectUri = `${baseUrl}${AUTH_CALLBACK_ROUTE}`
 let clientId: string
-let clientSecret
+let clientSecret: string
 try {
-    const response = await axios.post(`${authServerEndpoint}/client`, {
+    const response = await axios.post(`${AUTH_SERVER_ENDPOINT}/client`, {
         applicationName: 'my-client',
         redirectUrls: [redirectUri]
     })
@@ -109,22 +118,44 @@ function decodeOAuthStateParam(state: string): string {
     return Buffer.from(encodedUrl, 'base64').toString('ascii')
 }
 
-app.get(HOME_ROUTE, async (req: Request, res: Response, next: NextFunction) => {
-    const scopesResponse = await fetch(`${authServerEndpoint}/scopes`)
-    const scopes = await scopesResponse.json()
+app.get(HOME_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) => {
+    const scopesResponse = await axios.get(`${AUTH_SERVER_ENDPOINT}/scopes`)
 
-    await promisify(req.session.regenerate).call(req.session)
-    req.session.oauthState = encodeOAuthStateParam(`${baseUrl}${USER_DATA_ROUTE}`)
-    await promisify(req.session.save).call(req.session)
-
-    res.render(`home`, {
-        authServerEndpoint,
-        clientId,
-        redirectUri,
-        scopes,
-        state: req.session.oauthState
+    res.render('home', {
+        scopes: scopesResponse.data,
+        startOAuthRoute: START_OAUTH_ROUTE,
+        callbackRoute: USER_DATA_ROUTE
     });
-});
+}));
+
+app.get(START_OAUTH_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) =>
+    await validateQueryParams(req, res, next, OAuthSelectScopesQueryParams,
+        async (req, res: Response, next: NextFunction) => {
+            await promisify(req.session.regenerate).call(req.session)
+            req.session.oauthState = encodeOAuthStateParam(`${baseUrl}${req.query.callbackRoute}`)
+            await promisify(req.session.save).call(req.session)
+
+            const oauthQueryParams: OAuthStartFlowQueryParams = {
+                client_id: clientId,
+                redirect_uri: redirectUri,
+                response_type: 'code',
+                scope: req.query.scope,
+                state: req.session.oauthState
+            }
+            res.redirect(generateUrlWithQueryParams(`${AUTH_SERVER_ENDPOINT}/oauth/authorize`, oauthQueryParams));
+        })
+));
+
+async function processTokenExchangeRequest(req: Request, body: AccessTokenExchangeBody | RefreshTokenExchangeBody) {
+    const accessTokenResponse: AxiosResponse<AccessTokenExchangeResponse> =
+        await axios.post(`${AUTH_SERVER_ENDPOINT}/oauth/access_token`, body)
+
+    req.session.accessToken = accessTokenResponse.data.access_token
+    req.session.refreshToken = accessTokenResponse.data.refresh_token
+    // * 1000 because the expires_in field is expressed in seconds
+    req.session.tokenExpirationDate = Date.now() + accessTokenResponse.data.expires_in * 1000
+    req.session.tokenType = accessTokenResponse.data.token_type
+}
 
 app.get(AUTH_CALLBACK_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) =>
     await validateQueryParams(req, res, next, AuthorizationCallbackParams,
@@ -133,34 +164,58 @@ app.get(AUTH_CALLBACK_ROUTE, catchAsyncErrors(async (req: Request, res: Response
                 throw new ValidationError('state param has been manipulated')
             const redirectUri = decodeOAuthStateParam(req.query.state)
 
+            const accessTokenExchangeBody: AccessTokenExchangeBody = {
+                client_id: clientId,
+                redirect_uri: redirectUri,
+                code: req.query.authorization_code,
+                client_secret: clientSecret,
+                grant_type: 'authorization_code'
+            }
+            await processTokenExchangeRequest(req, accessTokenExchangeBody)
+
             res.redirect(redirectUri)
         })
 ));
 
-app.get(USER_DATA_ROUTE, async (req: Request, res: Response, next: NextFunction) => {
-    res.render(`home`, {
-        authServerEndpoint
+function hasAuthorization(req: Request, res: Response, next: NextFunction) {
+    if (!req.session.accessToken)
+        next(new UnauthorizedRequest())
+    else
+        next()
+}
+
+app.get(USER_DATA_ROUTE, hasAuthorization, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) => {
+    if (Date.now() >= req.session.tokenExpirationDate!) {
+        const refreshTokenExchangeBody: RefreshTokenExchangeBody = {
+            client_id: clientId,
+            refresh_token: req.session.refreshToken!,
+            client_secret: clientSecret,
+            grant_type: 'refresh_token'
+        }
+        await processTokenExchangeRequest(req, refreshTokenExchangeBody)
+    }
+
+    res.render('user_data_viewer', {
+        authServerEndpoint: AUTH_SERVER_ENDPOINT
     });
-});
+}));
 
 // *********************** error handling
-// app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
-//     switch (err.constructor) {
-//         case WrongCredentialsError:
-//             return res.status(404).send(err.message)
-//         case ValidationError:
-//             return res.status(400).json((err as ValidationError).validationRules)
-//         case UserNotAuthenticatedError:
-//             return res.status(401).send(err.message)
-//         default:
-//             console.log(err)
-//             return res.status(500).send(err.message)
-//     }
-// })
+app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
+    switch (err.constructor) {
+        case ValidationError:
+            return res.status(400).json((err as ValidationError).validationRules)
+        case UnauthorizedRequest:
+            return res.status(401).send(err.message)
+        default:
+            console.log(err)
+            return res.status(500).send(err.message)
+    }
+})
 
 
-app.listen(parseInt(port), host, () => {
-    console.log(`⚡️[server]: application is running at ${host}:${port}`);
+app.listen(parseInt(PORT), HOST, () => {
+    console.log(`⚡️[server]: application is running at ${HOST}:${PORT}`);
 });
 
 asyncExitHook(async () => {

@@ -26,11 +26,7 @@
 
 <body>
     <div class="mdl-layout mdl-js-layout">
-        <header class="mdl-layout__header">
-            <div class="mdl-layout__header-row">
-                <span class="mdl-layout-title">My test application</span>
-            </div>
-        </header>
+        <%- include('partials/header') %>
         <main class="mdl-layout__content">
             <div class="mdl-grid">
                 <div class="mdl-card mdl-cell mdl-cell--12-col mdl-shadow--8dp" id="card-oauth-flow">
@@ -56,8 +52,8 @@
                     </div>
                     <div class="mdl-card__actions">
                         <button class="mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect"
-                            onclick="startOAuthFlow()">
-                            Start OAuth Flow
+                            onclick="startOAuthFlow(this)" data-callback-route="<%- callbackRoute %>">
+                            View User Data
                         </button>
                     </div>
                 </div>
@@ -65,19 +61,17 @@
         </main>
     </div>
     <script>
-        function startOAuthFlow() {
+        function startOAuthFlow(btn) {
             const checkedScopes = [...document.querySelectorAll('#ul-scopes input[type="checkbox"]')]
                 .filter(node => node.checked).map(node => node.dataset.scopeName)
+            const callbackRoute = btn.dataset.callbackRoute
 
             const authorizeParams = {
-                client_id: '<%- clientId %>',
-                response_type: 'code',
-                redirect_uri: '<%- redirectUri %>',
-                scope: checkedScopes.join('+'),
-                state: '<%- state %>'
+                callbackRoute,
+                scope: checkedScopes.join('+')
             }
 
-            window.location.href = `<%- authServerEndpoint %>/oauth/authorize?${new URLSearchParams(authorizeParams).toString()}`
+            window.location.href = `${window.location.origin}<%- startOAuthRoute %>?${new URLSearchParams(authorizeParams).toString()}`
         }
     </script>
 </body>

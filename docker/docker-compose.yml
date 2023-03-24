@@ -8,7 +8,7 @@ services:
     ports:
       - 8043:27017
     volumes:
-      - mongo-data:/data/db
+      - auth-server-mongo-data:/data/db
     environment:
       MONGO_INITDB_ROOT_USERNAME: admin
       MONGO_INITDB_ROOT_PASSWORD_FILE: /run/secrets/db_password
@@ -21,14 +21,24 @@ services:
     ports:
       - 8044:6379
     volumes:
-      - redis-data:/data
+      - auth-server-redis-data:/data
+
+  client_sessions_store:
+    image: redis:7
+    container_name: client_sessions_store
+    ports:
+      - 8045:6379
+    volumes:
+      - client-redis-data:/data
 
 secrets:
   db_password:
     file: auth_server/db_password.secret
 
 volumes:
-  mongo-data:
+  auth-server-mongo-data:
     external: true
-  redis-data:
+  auth-server-redis-data:
+    external: true
+  client-redis-data:
     external: true

@@ -14,7 +14,7 @@ import session from "express-session"
 import { createClient } from "redis"
 import { ClientLoginBody, ClientLoginQueryParams } from './model/routes/login';
 import argon2 from "argon2";
-import { AuthCodeAlreadyUsed, OAuthAccessTokenExchangeFailedRequest, UnregisteredApplication, UserNotAuthenticatedError, ValidationError, WrongCredentialsError, WrongRedirectUri } from '../common/CustomErrors';
+import { AuthCodeAlreadyUsed, OAuthAccessTokenExchangeFailedRequest, UnregisteredApplication, UserNotAuthenticatedError, WrongCredentialsError, WrongRedirectUri } from './model/errors'
 import { promisify } from 'util';
 import dirName, { getEnvOrExit } from '../common/utils/envUtils';
 import path from 'path'
@@ -22,11 +22,12 @@ import { AuthCodeExtendedPayload, AuthCodePayload, AuthQueryParamsWithUserChoice
 import { LogoutQueryParams } from './model/routes/logout';
 import { Scope } from './model/db/Scope';
 import cors from 'cors'
-import { AccessTokenExchangeBody, AccessTokenExchangeResponse, AccessTokenPayload, RefreshTokenPayload } from './model/routes/access_token_exchange';
+import { AccessTokenExchangeBody, AccessTokenExchangeResponse, AccessTokenPayload, RefreshTokenExtendedPayload, RefreshTokenPayload } from './model/routes/access_token_exchange';
 import jwt, { JsonWebTokenError, Secret, SignOptions, TokenExpiredError, VerifyOptions } from 'jsonwebtoken'
 import { ClientRepoMongo } from './repositories/ClientRepo';
 import { UserRepoMongo } from './repositories/UserRepo';
 import { ScopeRepoMongo } from './repositories/ScopeRepo';
+import { ValidationError } from '../common/CustomErrors';
 
 // *********************** express setup
 const app: Express = express();
@@ -266,10 +267,11 @@ app.get(AUTHORIZATION_ROUTE, isAuthenticated, catchAsyncErrors(async (req: Reque
 /**
  * exchange the auth code with the access token or get a new access token from a refresh token
  */
-app.post(ACCESS_TOKEN_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) =>
+app.post(ACCESS_TOKEN_ROUTE, isAuthenticated, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) =>
     await validateUnionBody(req, res, next, AccessTokenExchangeBody,
         // TODO: the ValidationError message should comply with the json error with "error" and "error_description"
         async (req, res: Response, next: NextFunction) => {
+            let accessInfo
             if (req.body.grant_type === 'authorization_code') {
                 const decodedCode: AuthCodeExtendedPayload = await jwtVerify(req.body.code, PUBLIC_KEY, {
                     audience: 'auth-server',
@@ -304,13 +306,32 @@ app.post(ACCESS_TOKEN_ROUTE, catchAsyncErrors(async (req: Request, res: Response
                 await redisClient.set(codeKey, 1, {
                     'EX': MAX_AUTH_CODE_LIFETIME
                 })
+                accessInfo = decodedCode
             }
-            // TODO: implement refresh_token grant type
+            else { // grant_type === 'refresh_token'
+                const decodedRefreshToken: RefreshTokenExtendedPayload = await jwtVerify(req.body.refresh_token, PUBLIC_KEY, {
+                    audience: 'auth-server',
+                    issuer: 'auth-server',
+                    algorithms: ['RS256']
+                })
+
+                const client = await clientRepo.getByClientId(decodedRefreshToken.client_id)
+                if (client === null)
+                    throw new OAuthAccessTokenExchangeFailedRequest(404, 'invalid_request', new UnregisteredApplication().message)
+
+                if (decodedRefreshToken.client_id !== req.body.client_id)
+                    throw new OAuthAccessTokenExchangeFailedRequest(400, 'invalid_request', 'the specified client_id does not correspond to the one associated to the code')
+
+                if (client.clientSecret !== req.body.client_secret)
+                    throw new OAuthAccessTokenExchangeFailedRequest(401, 'invalid_client', 'client_secret is wrong')
+
+                accessInfo = decodedRefreshToken
+            }
 
             // access token generation
             const accessTokenPayload: AccessTokenPayload = {
-                clientId: decodedCode.client_id,
-                scope: decodedCode.scope
+                client_id: accessInfo.client_id,
+                scope: accessInfo.scope
             }
             const accessToken = await jwtSign(accessTokenPayload, PRIVATE_KEY, {
                 algorithm: 'RS256',
@@ -322,8 +343,10 @@ app.post(ACCESS_TOKEN_ROUTE, catchAsyncErrors(async (req: Request, res: Response
             })
 
             // refresh token generation
+            // the refresh token is regenerated every time as well
             const refreshTokenPayload: RefreshTokenPayload = {
-                clientId: decodedCode.client_id
+                client_id: accessInfo.client_id,
+                scope: accessInfo.scope
             }
             const refreshToken = await jwtSign(refreshTokenPayload, PRIVATE_KEY, {
                 algorithm: 'RS256',

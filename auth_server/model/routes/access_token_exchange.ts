@@ -25,10 +25,18 @@ export type AccessTokenExchangeResponse = {
 }
 
 export type AccessTokenPayload = {
-    clientId: string,
+    client_id: string,
     scope: string
 }
 
 export type RefreshTokenPayload = {
-    clientId: string
+    client_id: string,
+    scope: string
+}
+
+export type RefreshTokenExtendedPayload = RefreshTokenPayload & {
+    jti: string,
+    sub: string,
+    iss: string,
+    aud: string
 }

@@ -1,0 +1,69 @@
+<html>
+
+<head>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
+    <link rel="stylesheet" href="https://code.getmdl.io/1.3.0/material.indigo-pink.min.css">
+    <script defer src="https://code.getmdl.io/1.3.0/material.min.js"></script>
+    <style>
+        body {
+            background-color: rgb(206, 206, 206);
+        }
+
+        .mdl-card__title {
+            justify-content: center;
+        }
+
+        .mdl-grid {
+            margin-top: 10%;
+            max-width: 70%;
+        }
+
+        .mdl-card__actions {
+            text-align: center;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="mdl-layout mdl-js-layout">
+        <%- include('partials/header') %>
+        <main class="mdl-layout__content">
+            <div class="mdl-grid">
+                <div class="mdl-card mdl-cell mdl-cell--12-col mdl-shadow--8dp" id="card-permission-request">
+                    <div class="mdl-card__title">
+                        <h2 class="mdl-card__title-text">Available User Data</h2>
+                    </div>
+                    <div class="mdl-card__supporting-text">
+                        <h4 class="mdl-cell mdl-cell--12-col"><%= authParams.applicationName %> needs the following
+                            permissions
+                        </h4>
+                        <ul id="ul-requested-scopes" class="demo-list-control mdl-list">
+                            <% for (let scope of authParams.scope) { %>
+                            <li class="mdl-list__item">
+                                <div class="mdl-list__item-primary-content"><%= scope.name %></div>
+                                <div class="mdl-list__item-secondary-content"><%= scope.description %></div>
+                            </li>
+                            <% } %>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+    <script>
+        function redirectWithAuthCode(btn) {
+            const authorizationRoute = '<%- authorizationRoute %>'
+            const queryParams = new URLSearchParams({
+                response_type: 'code',
+                client_id: '<%- authParams.client_id %>',
+                redirect_uri: '<%- authParams.redirect_uri %>',
+                scope: '<%- authParams.scope.join("+") %>',
+                state: '<%- authParams.state %>',
+                user_choice: btn.dataset.action
+            }).toString()
+            window.location.href = `${window.location.origin}${authorizationRoute}?${queryParams}`
+        }
+    </script>
+</body>
+
+</html>

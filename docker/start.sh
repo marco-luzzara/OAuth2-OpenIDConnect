@@ -16,12 +16,15 @@ fi
 cd "$(dirname "$0")"
 
 main() {
-    local mongo_data_volume_name="mongo-data"
-    local redis_data_volume_name="redis-data"
-    docker volume inspect "$mongo_data_volume_name" &> /dev/null || 
-        ( echo "Creating $mongo_data_volume_name volume" && docker volume create "$mongo_data_volume_name" )
-    docker volume inspect "$redis_data_volume_name" &> /dev/null || 
-        ( echo "Creating $redis_data_volume_name volume" && docker volume create "$redis_data_volume_name" )
+    local auth_server_mongo_data_volume_name="auth-server-mongo-data"
+    local auth_server_redis_data_volume_name="auth-server-redis-data"
+    local client_data_volume_name="client-redis-data"
+    docker volume inspect "$auth_server_mongo_data_volume_name" &> /dev/null || 
+        ( echo "Creating $auth_server_mongo_data_volume_name volume" && docker volume create "$auth_server_mongo_data_volume_name" )
+    docker volume inspect "$auth_server_redis_data_volume_name" &> /dev/null || 
+        ( echo "Creating $auth_server_redis_data_volume_name volume" && docker volume create "$auth_server_redis_data_volume_name" )
+    docker volume inspect "$client_data_volume_name" &> /dev/null || 
+        ( echo "Creating $client_data_volume_name volume" && docker volume create "$client_data_volume_name" )
     docker-compose up --detach
 
     sleep 30
