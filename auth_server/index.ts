@@ -1,6 +1,6 @@
 import express, { Express, NextFunction, Request, Response } from 'express';
 import { MongoClient } from 'mongodb';
-import { validateBody, validateBodyAndQueryParams, validateQueryParams } from '../common/utils/validationUtils';
+import { validateBody, validateQueryParams, validateUnionBody } from '../common/utils/validationUtils';
 import { asyncExitHook } from 'exit-hook';
 import { User } from './model/db/User';
 import { Client } from './model/db/Client';
@@ -14,15 +14,15 @@ import session from "express-session"
 import { createClient } from "redis"
 import { ClientLoginBody, ClientLoginQueryParams } from './model/routes/login';
 import argon2 from "argon2";
-import { AuthCodeAlreadyUsed, UnregisteredApplication, UserNotAuthenticatedError, ValidationError, WrongCredentialsError } from '../common/CustomErrors';
+import { AuthCodeAlreadyUsed, OAuthAccessTokenExchangeFailedRequest, UnregisteredApplication, UserNotAuthenticatedError, ValidationError, WrongCredentialsError, WrongRedirectUri } from '../common/CustomErrors';
 import { promisify } from 'util';
 import dirName, { getEnvOrExit } from '../common/utils/envUtils';
 import path from 'path'
-import { AuthQueryParamsWithUserChoice, AuthRequestParams, ClientAuthorizationQueryParams, OAuthErrorResponse, ValidatedAuthRequestParams } from './model/routes/authorization';
+import { AuthCodeExtendedPayload, AuthCodePayload, AuthQueryParamsWithUserChoice, AuthRequestParams, ClientAuthorizationQueryParams, OAuthCodeFailedRequest, OAuthRedirectionQueryParams, ValidatedAuthRequestParams } from './model/routes/authorization';
 import { LogoutQueryParams } from './model/routes/logout';
 import { Scope } from './model/db/Scope';
 import cors from 'cors'
-import { AccessTokenExchangeBody } from './model/routes/access_token_exchange';
+import { AccessTokenExchangeBody, AccessTokenExchangeResponse, AccessTokenPayload, RefreshTokenPayload } from './model/routes/access_token_exchange';
 import jwt, { JsonWebTokenError, Secret, SignOptions, TokenExpiredError, VerifyOptions } from 'jsonwebtoken'
 import { ClientRepoMongo } from './repositories/ClientRepo';
 import { UserRepoMongo } from './repositories/UserRepo';
@@ -40,31 +40,33 @@ app.use(cookieParser())
 useLogger(app)
 
 // *********************** env and const
-const networkProtocol = getEnvOrExit('NETWORK_PROTOCOL')
-const host = getEnvOrExit('HOST')
-const port = getEnvOrExit('PORT')
-const baseUrl = `${networkProtocol}://${host}:${port}`
-const dbConnectionString = getEnvOrExit('DB_CONNECTION_STRING')
-const sessionStorageConnString = getEnvOrExit('SESSION_STORAGE_CONNECTION_STRING')
-const sessionSecret = getEnvOrExit('SESSION_SECRET')
-const privateKey = getEnvOrExit('PRIVATE_KEY')
-const publicKey = getEnvOrExit('PUBLIC_KEY')
-const MAX_AUTH_CODE_LIFETIME = 60 // 60 seconds
+const NETWORK_PROTOCOL = getEnvOrExit('NETWORK_PROTOCOL')
+const HOST = getEnvOrExit('HOST')
+const PORT = getEnvOrExit('PORT')
+const baseUrl = `${NETWORK_PROTOCOL}://${HOST}:${PORT}`
+const DB_CONNECTION_STRING = getEnvOrExit('DB_CONNECTION_STRING')
+const SESSION_STORAGE_CONNECTION_STRING = getEnvOrExit('SESSION_STORAGE_CONNECTION_STRING')
+const SESSION_SECRET = getEnvOrExit('SESSION_SECRET')
+const PRIVATE_KEY = getEnvOrExit('PRIVATE_KEY')
+const PUBLIC_KEY = getEnvOrExit('PUBLIC_KEY')
+const MAX_AUTH_CODE_LIFETIME = parseInt(getEnvOrExit('MAX_AUTH_CODE_LIFETIME'))
+const MAX_ACCESS_TOKEN_LIFETIME = parseInt(getEnvOrExit('MAX_ACCESS_TOKEN_LIFETIME'))
+const MAX_REFRESH_TOKEN_LIFETIME = parseInt(getEnvOrExit('MAX_REFRESH_TOKEN_LIFETIME'))
 
 // *********************** mongo setup
-const mongoClient = new MongoClient(dbConnectionString);
+const mongoClient = new MongoClient(DB_CONNECTION_STRING);
 const database = mongoClient.db('demo');
 const userRepo = new UserRepoMongo(database.collection<User>('users'))
 const clientRepo = new ClientRepoMongo(database.collection<Client>('clients'))
 const scopeRepo = new ScopeRepoMongo(database.collection<Scope>('scopes'))
 
 // *********************** promisified functions
-const jwtSign = promisify<object, Secret, SignOptions>(jwt.sign)
+const jwtSign = promisify<object, Secret, SignOptions, string>(jwt.sign)
 const jwtVerify = promisify<string, Secret, VerifyOptions, any>(jwt.verify)
 
 // *********************** redis for sessions storage
 let redisClient = createClient({
-    url: sessionStorageConnString
+    url: SESSION_STORAGE_CONNECTION_STRING
 })
 await redisClient.connect()
 let redisStore = new RedisStore({
@@ -77,7 +79,7 @@ const sessionConfig = {
     store: redisStore,
     resave: true, // required: force lightweight session keep alive (touch)
     saveUninitialized: true, // recommended: only save session when data exists
-    secret: sessionSecret,
+    secret: SESSION_SECRET,
     cookie: {
         secure: "auto" as "auto", // determine the secure over https depending on the connection config
         httpOnly: true, // if true prevent client side JS from reading the cookie 
@@ -183,19 +185,18 @@ async function getValidatedScopes(scope: string): Promise<Scope[] | null> {
  * @returns the validated and cleaned oauth params or the error code + error description
  */
 async function getValidatedAuthParams(params: AuthRequestParams):
-    Promise<ValidatedAuthRequestParams | OAuthErrorResponse> {
+    Promise<ValidatedAuthRequestParams | OAuthCodeFailedRequest> {
     const foundClient = await clientRepo.getByClientId(params.client_id)
 
     if (foundClient === null)
         throw new UnregisteredApplication()
 
     if (!foundClient.redirectUrls.includes(params.redirect_uri))
-        return new OAuthErrorResponse(params.redirect_uri, params.state,
-            'invalid_request', 'redirect_uri does not correspond to the registration uri')
+        throw new WrongRedirectUri()
 
     const foundScopes = await getValidatedScopes(params.scope)
     if (foundScopes === null)
-        return new OAuthErrorResponse(params.redirect_uri, params.state,
+        return new OAuthCodeFailedRequest(params.redirect_uri,
             'invalid_scope', 'one or more of the specified scopes are not acceptable')
 
     return { ...params, applicationName: foundClient.applicationName, scope: foundScopes }
@@ -208,7 +209,7 @@ app.get(AUTH_DIALOG_ROUTE, isAuthenticated, catchAsyncErrors(async (req: Request
     await validateQueryParams(req, res, next, ClientAuthorizationQueryParams,
         async (req, res: Response, next: NextFunction) => {
             const authValidationResult = await getValidatedAuthParams(req.query)
-            if (authValidationResult instanceof OAuthErrorResponse) {
+            if (authValidationResult instanceof OAuthCodeFailedRequest) {
                 res.redirect(authValidationResult.buildCompleteUri())
                 return;
             }
@@ -220,27 +221,22 @@ app.get(AUTH_DIALOG_ROUTE, isAuthenticated, catchAsyncErrors(async (req: Request
         })
 ))
 
-type AuthCodePayload = {
-    client_id: string,
-    redirect_uri: string,
-    username: string,
-    id: string
-}
-
 /**
  * process the oauth flow (like creating the authorization code) and redirect to redirect_uri
  */
 app.get(AUTHORIZATION_ROUTE, isAuthenticated, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) =>
     await validateQueryParams(req, res, next, AuthQueryParamsWithUserChoice,
+        // TODO: instead of a ValidationError I should technically redirect to redirect_uri with an
+        // invalid_request error. However, I should first validate the redirect_uri is present and valid. 
         async (req, res: Response, next: NextFunction) => {
             if (req.query.user_choice === 'deny') {
-                res.redirect(new OAuthErrorResponse(req.query.redirect_uri, req.query.state,
+                res.redirect(new OAuthCodeFailedRequest(req.query.redirect_uri,
                     'access_denied', 'The user did not allow the request').buildCompleteUri())
                 return
             }
 
             const authValidationResult = await getValidatedAuthParams(req.query)
-            if (authValidationResult instanceof OAuthErrorResponse) {
+            if (authValidationResult instanceof OAuthCodeFailedRequest) {
                 res.redirect(authValidationResult.buildCompleteUri())
                 return
             }
@@ -248,58 +244,103 @@ app.get(AUTHORIZATION_ROUTE, isAuthenticated, catchAsyncErrors(async (req: Reque
             const authCodePayload: AuthCodePayload = {
                 client_id: req.query.client_id,
                 redirect_uri: req.query.redirect_uri,
-                username: req.session.username!,
-                id: generateUUIDv1()
+                scope: req.query.scope
             }
-            const authCode = await jwtSign(authCodePayload, privateKey, {
+            const authCode = await jwtSign(authCodePayload, PRIVATE_KEY, {
                 algorithm: 'RS256',
                 issuer: 'auth-server',
+                subject: req.session.username,
+                audience: 'auth-server',
+                jwtid: generateUUIDv1(),
                 expiresIn: MAX_AUTH_CODE_LIFETIME
             })
 
-            res.redirect(generateUrlWithQueryParams(req.query.redirect_uri, {
+            const redirectionQueryParam: OAuthRedirectionQueryParams = {
                 code: authCode,
                 state: req.query.state
-            }))
+            }
+            res.redirect(generateUrlWithQueryParams(req.query.redirect_uri, redirectionQueryParam))
         })
 ))
 
+/**
+ * exchange the auth code with the access token or get a new access token from a refresh token
+ */
 app.post(ACCESS_TOKEN_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) =>
-    await validateBody(req, res, next, AccessTokenExchangeBody,
+    await validateUnionBody(req, res, next, AccessTokenExchangeBody,
+        // TODO: the ValidationError message should comply with the json error with "error" and "error_description"
         async (req, res: Response, next: NextFunction) => {
-            const decodedCode: AuthCodePayload = await jwtVerify(req.body.code, publicKey, {
-                issuer: 'auth-server',
-                algorithms: ['RS256']
-            })
+            if (req.body.grant_type === 'authorization_code') {
+                const decodedCode: AuthCodeExtendedPayload = await jwtVerify(req.body.code, PUBLIC_KEY, {
+                    audience: 'auth-server',
+                    issuer: 'auth-server',
+                    algorithms: ['RS256']
+                })
 
-            let codeValidationErrors = []
-            if (decodedCode.username !== req.session.username)
-                codeValidationErrors.push('the username does not correspond with the auth code owner')
-            const client = await clientRepo.getByClientId(decodedCode.client_id)
-            if (client === null)
-                codeValidationErrors.push('the client id of the authcode does not exist')
-            else {
-                if (!client.redirectUrls.includes(decodedCode.redirect_uri))
-                    codeValidationErrors.push('the redirect_uri does not correspond to the registered one')
+                const client = await clientRepo.getByClientId(decodedCode.client_id)
+                if (client === null)
+                    throw new OAuthAccessTokenExchangeFailedRequest(404, 'invalid_request', new UnregisteredApplication().message)
+
+                if (decodedCode.client_id !== req.body.client_id)
+                    throw new OAuthAccessTokenExchangeFailedRequest(400, 'invalid_request', 'the specified client_id does not correspond to the one associated to the code')
+
+                if (req.body.redirect_uri !== decodedCode.redirect_uri)
+                    throw new OAuthAccessTokenExchangeFailedRequest(400, 'invalid_grant', new WrongRedirectUri().message)
+
+                if (client.clientSecret !== req.body.client_secret)
+                    throw new OAuthAccessTokenExchangeFailedRequest(401, 'invalid_client', 'client_secret is wrong')
+
+                // using the client_id as first namespace is useful to revoke everything that belongs to a certain client-id
+                const codeKey = `username:${decodedCode.sub}:auth-code:${decodedCode.jti}`
+
+                // if the auth code token already exists in the cache, then it has been already used. see key set
+                if (await redisClient.exists(codeKey))
+                    // TODO: invalidate the access tokens retrieved from this auth code
+                    throw new AuthCodeAlreadyUsed()
+
+                // I store the auth code in the cache to mark it as already used. This key will automatically expire
+                // after MAX_AUTH_CODE_LIFETIME. In this timespan, the auth code token will surely expire and it 
+                // will become unavailable forever
+                await redisClient.set(codeKey, 1, {
+                    'EX': MAX_AUTH_CODE_LIFETIME
+                })
             }
+            // TODO: implement refresh_token grant type
 
-            if (codeValidationErrors.length >= 1)
-                throw new ValidationError(codeValidationErrors)
-
-            const codeKey = `auth-code:${decodedCode.id}`
-
-            // if the auth code token already exists in the cache, then it has been already used. see key set
-            if (await redisClient.exists(codeKey))
-                throw new AuthCodeAlreadyUsed()
-
-            // I store the auth code in the cache to mark it as already used. This key will automatically expire
-            // after MAX_AUTH_CODE_LIFETIME. In this timespan, the auth code token will surely expire and it 
-            // will become unavailable forever
-            await redisClient.set(codeKey, 1, {
-                'EX': MAX_AUTH_CODE_LIFETIME
+            // access token generation
+            const accessTokenPayload: AccessTokenPayload = {
+                clientId: decodedCode.client_id,
+                scope: decodedCode.scope
+            }
+            const accessToken = await jwtSign(accessTokenPayload, PRIVATE_KEY, {
+                algorithm: 'RS256',
+                issuer: 'auth-server',
+                subject: req.session.username,
+                audience: 'resource-server',
+                jwtid: generateUUIDv1(),
+                expiresIn: MAX_ACCESS_TOKEN_LIFETIME
             })
 
-            // TODO
+            // refresh token generation
+            const refreshTokenPayload: RefreshTokenPayload = {
+                clientId: decodedCode.client_id
+            }
+            const refreshToken = await jwtSign(refreshTokenPayload, PRIVATE_KEY, {
+                algorithm: 'RS256',
+                issuer: 'auth-server',
+                subject: req.session.username,
+                audience: 'auth-server',
+                jwtid: generateUUIDv1(),
+                expiresIn: MAX_REFRESH_TOKEN_LIFETIME
+            })
+
+            const accessTokenBody: AccessTokenExchangeResponse = {
+                token_type: 'Bearer',
+                access_token: accessToken,
+                expires_in: MAX_ACCESS_TOKEN_LIFETIME,
+                refresh_token: refreshToken
+            }
+            res.setHeader('Cache-Control', 'no-store').json(accessTokenBody)
         })
 ))
 
@@ -370,12 +411,17 @@ app.get(LOGOUT_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next:
 // *********************** error handling
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
     switch (err.constructor) {
-        case WrongCredentialsError:
+        case WrongCredentialsError || UnregisteredApplication:
             return res.status(404).send(err.message)
+        case WrongRedirectUri:
+            return res.status(400).send(err.message)
         case ValidationError:
             return res.status(400).json((err as ValidationError).validationRules)
         case UserNotAuthenticatedError || TokenExpiredError || JsonWebTokenError || AuthCodeAlreadyUsed:
             return res.status(401).send(err.message)
+        case OAuthAccessTokenExchangeFailedRequest:
+            const accessTokenExchangeError = err as OAuthAccessTokenExchangeFailedRequest
+            return res.status(accessTokenExchangeError.httpError).json(accessTokenExchangeError.errorBody)
         default:
             console.log(err)
             return res.status(500).send(err.message)
@@ -384,8 +430,8 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
 
 // *********************** server start
 
-app.listen(parseInt(port), host, () => {
-    console.log(`⚡️[server]: Server is running at ${host}:${port}`);
+app.listen(parseInt(PORT), HOST, () => {
+    console.log(`⚡️[server]: Server is running at ${HOST}:${PORT}`);
 });
 
 asyncExitHook(async () => {

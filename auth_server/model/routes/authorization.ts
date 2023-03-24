@@ -32,15 +32,13 @@ export type ValidatedAuthRequestParams = AuthRequestParamsShared & {
     scope: Scope[]
 }
 
-export class OAuthErrorResponse {
+export class OAuthCodeFailedRequest {
     readonly redirectUri: string
-    readonly state: string
     readonly error: string
     readonly errorDescription: string
 
-    constructor(redirectUri: string, state: string, error: string, errorDescription: string) {
+    constructor(redirectUri: string, error: string, errorDescription: string) {
         this.redirectUri = redirectUri
-        this.state = state
         this.error = error
         this.errorDescription = errorDescription
     }
@@ -48,8 +46,25 @@ export class OAuthErrorResponse {
     buildCompleteUri(): string {
         return generateUrlWithQueryParams(this.redirectUri, {
             error: this.error,
-            error_description: this.errorDescription,
-            state: this.state
+            error_description: this.errorDescription
         })
     }
+}
+
+export type AuthCodePayload = {
+    client_id: string,
+    redirect_uri: string,
+    scope: string
+}
+
+export type AuthCodeExtendedPayload = AuthCodePayload & {
+    jti: string,
+    sub: string,
+    iss: string,
+    aud: string
+}
+
+export type OAuthRedirectionQueryParams = {
+    code: string,
+    state: string
 }
