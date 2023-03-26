@@ -11,9 +11,9 @@ services:
       - auth-server-mongo-data:/data/db
     environment:
       MONGO_INITDB_ROOT_USERNAME: admin
-      MONGO_INITDB_ROOT_PASSWORD_FILE: /run/secrets/db_password
+      MONGO_INITDB_ROOT_PASSWORD_FILE: /run/secrets/auth_server_db_password
     secrets:
-      - db_password
+      - auth_server_db_password
 
   auth_server_sessions_store:
     image: redis:7
@@ -31,9 +31,24 @@ services:
     volumes:
       - client-redis-data:/data
 
+  resource_server_db:
+    image: mongo:5.0
+    container_name: resource_server_db
+    ports:
+      - 8046:27017
+    volumes:
+      - resource-server-mongo-data:/data/db
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD_FILE: /run/secrets/resource_server_db_password
+    secrets:
+      - resource_server_db_password
+
 secrets:
-  db_password:
+  auth_server_db_password:
     file: auth_server/db_password.secret
+  resource_server_db_password:
+    file: resource_server/db_password.secret
 
 volumes:
   auth-server-mongo-data:
@@ -41,4 +56,6 @@ volumes:
   auth-server-redis-data:
     external: true
   client-redis-data:
+    external: true
+  resource-server-mongo-data:
     external: true

@@ -98,6 +98,14 @@ catch (err) {
     process.exit(1)
 }
 
+// *********************** routes middleware
+function hasAuthorization(req: Request, res: Response, next: NextFunction) {
+    if (!req.session.accessToken)
+        next(new UnauthorizedRequest())
+    else
+        next()
+}
+
 // *********************** routes
 /**
  * create a base64 string that concatenates a random nonce and the base-64 encoded url to redirect the user
@@ -118,6 +126,9 @@ function decodeOAuthStateParam(state: string): string {
     return Buffer.from(encodedUrl, 'base64').toString('ascii')
 }
 
+/**
+ * home page of the application
+ */
 app.get(HOME_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) => {
     const scopesResponse = await axios.get(`${AUTH_SERVER_ENDPOINT}/scopes`)
 
@@ -128,6 +139,9 @@ app.get(HOME_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next: N
     });
 }));
 
+/**
+ * start the oauth flow by requesting an auth code
+ */
 app.get(START_OAUTH_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) =>
     await validateQueryParams(req, res, next, OAuthSelectScopesQueryParams,
         async (req, res: Response, next: NextFunction) => {
@@ -157,6 +171,10 @@ async function processTokenExchangeRequest(req: Request, body: AccessTokenExchan
     req.session.tokenType = accessTokenResponse.data.token_type
 }
 
+/**
+ * represents the callback of the oauth flow. it immediately tries to exchange the auth code with 
+ * an access token
+ */
 app.get(AUTH_CALLBACK_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) =>
     await validateQueryParams(req, res, next, AuthorizationCallbackParams,
         async (req, res: Response, next: NextFunction) => {
@@ -177,13 +195,9 @@ app.get(AUTH_CALLBACK_ROUTE, catchAsyncErrors(async (req: Request, res: Response
         })
 ));
 
-function hasAuthorization(req: Request, res: Response, next: NextFunction) {
-    if (!req.session.accessToken)
-        next(new UnauthorizedRequest())
-    else
-        next()
-}
-
+/**
+ * get the user data
+ */
 app.get(USER_DATA_ROUTE, hasAuthorization, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) => {
     if (Date.now() >= req.session.tokenExpirationDate!) {
         const refreshTokenExchangeBody: RefreshTokenExchangeBody = {
