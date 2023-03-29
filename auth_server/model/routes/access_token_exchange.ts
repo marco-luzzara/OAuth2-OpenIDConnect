@@ -1,7 +1,7 @@
 import * as t from 'io-ts'
 import { HttpLink } from '../../../common/utils/io-ts-extension/refinements/Link'
 
-export const AccessTokenExchangeBody = t.union([
+export const AccessTokenExchangeBodyTypeCheck = t.union([
     t.type({
         code: t.string,
         grant_type: t.literal('authorization_code'),
@@ -16,27 +16,3 @@ export const AccessTokenExchangeBody = t.union([
         client_secret: t.string
     })
 ])
-
-export type AccessTokenExchangeResponse = {
-    token_type: "Bearer",
-    expires_in: number,
-    access_token: string,
-    refresh_token: string
-}
-
-export type AccessTokenPayload = {
-    client_id: string,
-    scope: string
-}
-
-export type RefreshTokenPayload = {
-    client_id: string,
-    scope: string
-}
-
-export type RefreshTokenExtendedPayload = RefreshTokenPayload & {
-    jti: string,
-    sub: string,
-    iss: string,
-    aud: string
-}

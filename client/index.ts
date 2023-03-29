@@ -1,5 +1,5 @@
 import express, { Express, Request, Response, NextFunction } from 'express';
-import axios, { AxiosResponse } from 'axios';
+import axios, { AxiosError, AxiosResponse } from 'axios';
 import { useLogger } from '../common/utils/loggingUtils';
 import dirName, { getEnvOrExit } from '../common/utils/envUtils';
 import cookieParser from 'cookie-parser';
@@ -12,10 +12,11 @@ import session from 'express-session';
 import { promisify } from 'util';
 import { catchAsyncErrors } from '../common/utils/errorHandlingUtils';
 import { validateQueryParams } from '../common/utils/validationUtils';
-import { AccessTokenExchangeBody, AccessTokenExchangeResponse, AuthorizationCallbackParams, RefreshTokenExchangeBody } from './model/routes/access_token_exchange';
+import { AuthorizationCallbackParamsTypeCheck } from './model/routes/access_token_exchange';
+import { AccessTokenExchangeBody, AccessTokenExchangeResponse, OAuthStartFlowQueryParams, RefreshTokenExchangeBody } from '../common/types/oauth_types'
 import { ValidationError } from '../common/CustomErrors';
 import { generateUrlWithQueryParams } from '../common/utils/generationUtils';
-import { OAuthSelectScopesQueryParams, OAuthStartFlowQueryParams } from './model/routes/authorization';
+import { OAuthSelectScopesQueryParamsTypeCheck } from './model/routes/authorization';
 import { UnauthorizedRequest } from './model/errors';
 
 // *********************** express setup
@@ -143,7 +144,7 @@ app.get(HOME_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next: N
  * start the oauth flow by requesting an auth code
  */
 app.get(START_OAUTH_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) =>
-    await validateQueryParams(req, res, next, OAuthSelectScopesQueryParams,
+    await validateQueryParams(req, res, next, OAuthSelectScopesQueryParamsTypeCheck,
         async (req, res: Response, next: NextFunction) => {
             await promisify(req.session.regenerate).call(req.session)
             req.session.oauthState = encodeOAuthStateParam(`${baseUrl}${req.query.callbackRoute}`)
@@ -160,7 +161,7 @@ app.get(START_OAUTH_ROUTE, catchAsyncErrors(async (req: Request, res: Response, 
         })
 ));
 
-async function processTokenExchangeRequest(req: Request, body: AccessTokenExchangeBody | RefreshTokenExchangeBody) {
+async function sendTokenExchangeRequest(req: Request, body: AccessTokenExchangeBody | RefreshTokenExchangeBody) {
     const accessTokenResponse: AxiosResponse<AccessTokenExchangeResponse> =
         await axios.post(`${AUTH_SERVER_ENDPOINT}/oauth/access_token`, body)
 
@@ -176,7 +177,7 @@ async function processTokenExchangeRequest(req: Request, body: AccessTokenExchan
  * an access token
  */
 app.get(AUTH_CALLBACK_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) =>
-    await validateQueryParams(req, res, next, AuthorizationCallbackParams,
+    await validateQueryParams(req, res, next, AuthorizationCallbackParamsTypeCheck,
         async (req, res: Response, next: NextFunction) => {
             if (req.query.state !== req.session.oauthState)
                 throw new ValidationError('state param has been manipulated')
@@ -189,7 +190,7 @@ app.get(AUTH_CALLBACK_ROUTE, catchAsyncErrors(async (req: Request, res: Response
                 client_secret: clientSecret,
                 grant_type: 'authorization_code'
             }
-            await processTokenExchangeRequest(req, accessTokenExchangeBody)
+            await sendTokenExchangeRequest(req, accessTokenExchangeBody)
 
             res.redirect(redirectUri)
         })
@@ -199,18 +200,40 @@ app.get(AUTH_CALLBACK_ROUTE, catchAsyncErrors(async (req: Request, res: Response
  * get the user data
  */
 app.get(USER_DATA_ROUTE, hasAuthorization, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) => {
-    if (Date.now() >= req.session.tokenExpirationDate!) {
+    const renewToken = async () => {
         const refreshTokenExchangeBody: RefreshTokenExchangeBody = {
             client_id: clientId,
             refresh_token: req.session.refreshToken!,
             client_secret: clientSecret,
             grant_type: 'refresh_token'
         }
-        await processTokenExchangeRequest(req, refreshTokenExchangeBody)
+        await sendTokenExchangeRequest(req, refreshTokenExchangeBody)
     }
+    const getUserData = async () => await axios.get(`${RESOURCE_SERVER_ENDPOINT}/user`, {
+        headers: {
+            'Authorization': `Bearer ${req.session.accessToken}`
+        }
+    })
+
+    if (Date.now() >= req.session.tokenExpirationDate!)
+        await renewToken()
+
+    let userRes
+    try {
+        userRes = await getUserData()
+    }
+    catch (err) {
+        if (err instanceof AxiosError && err.response?.status === 401) {
+            await renewToken()
+            userRes = await getUserData()
+        }
+        else
+            throw err
+    }
+    const userData = userRes.data
 
     res.render('user_data_viewer', {
-        authServerEndpoint: AUTH_SERVER_ENDPOINT
+        userData: userData
     });
 }));
 

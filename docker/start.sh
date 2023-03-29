@@ -16,18 +16,12 @@ fi
 cd "$(dirname "$0")"
 
 main() {
-    local auth_server_mongo_data_volume_name="auth-server-mongo-data"
-    local auth_server_redis_data_volume_name="auth-server-redis-data"
-    local client_data_volume_name="client-redis-data"
-    local resource_server_mongo_data_volume_name="resource-server-mongo-data"
-    docker volume inspect "$auth_server_mongo_data_volume_name" &> /dev/null || 
-        ( echo "Creating $auth_server_mongo_data_volume_name volume" && docker volume create "$auth_server_mongo_data_volume_name" )
-    docker volume inspect "$auth_server_redis_data_volume_name" &> /dev/null || 
-        ( echo "Creating $auth_server_redis_data_volume_name volume" && docker volume create "$auth_server_redis_data_volume_name" )
-    docker volume inspect "$client_data_volume_name" &> /dev/null || 
-        ( echo "Creating $client_data_volume_name volume" && docker volume create "$client_data_volume_name" )
-    docker volume inspect "$resource_server_mongo_data_volume_name" &> /dev/null || 
-        ( echo "Creating $resource_server_mongo_data_volume_name volume" && docker volume create "$resource_server_mongo_data_volume_name" )
+    local possibly_new_volumes='auth-server-mongo-data auth-server-redis-data client-redis-data resource-server-mongo-data'
+    for vol in $possibly_new_volumes
+    do
+        docker volume inspect "$vol" &> /dev/null || 
+            ( echo "Creating $vol volume" && docker volume create "$vol" )
+    done
     docker-compose up --detach
 
     sleep 30

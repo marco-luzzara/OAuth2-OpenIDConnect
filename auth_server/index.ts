@@ -10,7 +10,7 @@ import { buildClientRegistrationResponse, ClientRegistrationBody } from './model
 import { useLogger } from '../common/utils/loggingUtils';
 import cookieParser from 'cookie-parser'
 import RedisStore from "connect-redis"
-import session from "express-session"
+import session, { SessionData } from "express-session"
 import { createClient } from "redis"
 import { ClientLoginBody, ClientLoginQueryParams } from './model/routes/login';
 import argon2 from "argon2";
@@ -18,12 +18,13 @@ import { AuthCodeAlreadyUsed, OAuthAccessTokenExchangeFailedRequest, Unregistere
 import { promisify } from 'util';
 import dirName, { getEnvOrExit } from '../common/utils/envUtils';
 import path from 'path'
-import { AuthCodeExtendedPayload, AuthCodePayload, AuthQueryParamsWithUserChoice, AuthRequestParams, ClientAuthorizationQueryParams, OAuthCodeFailedRequest, OAuthRedirectionQueryParams, ValidatedAuthRequestParams } from './model/routes/authorization';
+import { AuthQueryParamsWithUserChoiceTypeCheck, AuthRequestParams, ClientAuthorizationQueryParamsTypeCheck, OAuthCodeFailedRequest, ValidatedAuthRequestParams } from './model/routes/authorization';
 import { LogoutQueryParams } from './model/routes/logout';
 import { Scope } from './model/db/Scope';
 import cors from 'cors'
-import { AccessTokenExchangeBody, AccessTokenExchangeResponse, AccessTokenPayload, RefreshTokenExtendedPayload, RefreshTokenPayload } from './model/routes/access_token_exchange';
-import jwt, { JsonWebTokenError, Secret, SignOptions, TokenExpiredError, VerifyOptions } from 'jsonwebtoken'
+import { AccessTokenExchangeBodyTypeCheck } from './model/routes/access_token_exchange';
+import { AccessTokenExchangeResponse, AccessTokenPayload, AuthCodeExtendedPayload, AuthCodePayload, OAuthRedirectionQueryParams, RefreshTokenExtendedPayload, RefreshTokenPayload } from '../common/types/oauth_types'
+import jwt, { Secret, SignOptions, VerifyOptions } from 'jsonwebtoken'
 import { ClientRepoMongo } from './repositories/ClientRepo';
 import { UserRepoMongo } from './repositories/UserRepo';
 import { ScopeRepoMongo } from './repositories/ScopeRepo';
@@ -91,7 +92,13 @@ const sessionConfig = {
 declare module 'express-session' {
     interface SessionData {
         username: string
+        subject: any
     }
+}
+
+function resetSession(session: session.Session & Partial<SessionData>) {
+    session.username = undefined
+    session.subject = undefined
 }
 
 app.use(session(sessionConfig))
@@ -151,7 +158,7 @@ app.get(SCOPES_ROUTE, cors(), catchAsyncErrors(async (req: Request, res: Respons
  * with the current account.
  */
 app.get(AUTHORIZE_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) =>
-    await validateQueryParams(req, res, next, ClientAuthorizationQueryParams,
+    await validateQueryParams(req, res, next, ClientAuthorizationQueryParamsTypeCheck,
         async (req, res: Response, next: NextFunction) => {
             const callback = generateUrlWithQueryParams(`${baseUrl}${AUTH_DIALOG_ROUTE}`, req.query)
 
@@ -207,7 +214,7 @@ async function getValidatedAuthParams(params: AuthRequestParams):
  * shows the user a dialog that asks for permission on behalf of the application
  */
 app.get(AUTH_DIALOG_ROUTE, isAuthenticated, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) =>
-    await validateQueryParams(req, res, next, ClientAuthorizationQueryParams,
+    await validateQueryParams(req, res, next, ClientAuthorizationQueryParamsTypeCheck,
         async (req, res: Response, next: NextFunction) => {
             const authValidationResult = await getValidatedAuthParams(req.query)
             if (authValidationResult instanceof OAuthCodeFailedRequest) {
@@ -226,7 +233,7 @@ app.get(AUTH_DIALOG_ROUTE, isAuthenticated, catchAsyncErrors(async (req: Request
  * process the oauth flow (like creating the authorization code) and redirect to redirect_uri
  */
 app.get(AUTHORIZATION_ROUTE, isAuthenticated, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) =>
-    await validateQueryParams(req, res, next, AuthQueryParamsWithUserChoice,
+    await validateQueryParams(req, res, next, AuthQueryParamsWithUserChoiceTypeCheck,
         // TODO: instead of a ValidationError I should technically redirect to redirect_uri with an
         // invalid_request error. However, I should first validate the redirect_uri is present and valid. 
         async (req, res: Response, next: NextFunction) => {
@@ -250,7 +257,7 @@ app.get(AUTHORIZATION_ROUTE, isAuthenticated, catchAsyncErrors(async (req: Reque
             const authCode = await jwtSign(authCodePayload, PRIVATE_KEY, {
                 algorithm: 'RS256',
                 issuer: 'auth-server',
-                subject: req.session.username,
+                subject: req.session.subject,
                 audience: 'auth-server',
                 jwtid: generateUUIDv1(),
                 expiresIn: MAX_AUTH_CODE_LIFETIME
@@ -268,7 +275,7 @@ app.get(AUTHORIZATION_ROUTE, isAuthenticated, catchAsyncErrors(async (req: Reque
  * exchange the auth code with the access token or get a new access token from a refresh token
  */
 app.post(ACCESS_TOKEN_ROUTE, isAuthenticated, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) =>
-    await validateUnionBody(req, res, next, AccessTokenExchangeBody,
+    await validateUnionBody(req, res, next, AccessTokenExchangeBodyTypeCheck,
         // TODO: the ValidationError message should comply with the json error with "error" and "error_description"
         async (req, res: Response, next: NextFunction) => {
             let accessInfo
@@ -336,7 +343,7 @@ app.post(ACCESS_TOKEN_ROUTE, isAuthenticated, catchAsyncErrors(async (req: Reque
             const accessToken = await jwtSign(accessTokenPayload, PRIVATE_KEY, {
                 algorithm: 'RS256',
                 issuer: 'auth-server',
-                subject: req.session.username,
+                subject: req.session.subject,
                 audience: 'resource-server',
                 jwtid: generateUUIDv1(),
                 expiresIn: MAX_ACCESS_TOKEN_LIFETIME
@@ -351,7 +358,7 @@ app.post(ACCESS_TOKEN_ROUTE, isAuthenticated, catchAsyncErrors(async (req: Reque
             const refreshToken = await jwtSign(refreshTokenPayload, PRIVATE_KEY, {
                 algorithm: 'RS256',
                 issuer: 'auth-server',
-                subject: req.session.username,
+                subject: req.session.subject,
                 audience: 'auth-server',
                 jwtid: generateUUIDv1(),
                 expiresIn: MAX_REFRESH_TOKEN_LIFETIME
@@ -389,8 +396,9 @@ app.get(LOGIN_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next: 
 app.post(LOGIN_ROUTE, cors(), catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) =>
     await validateBody(req, res, next, ClientLoginBody,
         async (req, res: Response, next: NextFunction) => {
-            if (req.session.username)
-                req.session.username = undefined
+            if (req.session.username) {
+                resetSession(req.session)
+            }
 
             const storedPassword = await argon2.hash(req.body.password, {
                 parallelism: 1,
@@ -407,7 +415,8 @@ app.post(LOGIN_ROUTE, cors(), catchAsyncErrors(async (req: Request, res: Respons
 
             // https://www.npmjs.com/package/express-session#user-content-user-login
             await promisify(req.session.regenerate).call(req.session)
-            req.session.username = req.body.username
+            req.session.username = userFindOneResult.username
+            req.session.subject = userFindOneResult._id
             await promisify(req.session.save).call(req.session)
 
             res.status(200).end()
@@ -421,7 +430,7 @@ app.get(LOGOUT_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next:
     await validateQueryParams(req, res, next, LogoutQueryParams,
         async (req, res: Response, next: NextFunction) => {
             // https://www.npmjs.com/package/express-session#user-content-user-login
-            req.session.username = undefined
+            resetSession(req.session)
             await promisify(req.session.save).call(req.session)
             await promisify(req.session.regenerate).call(req.session)
 
@@ -440,7 +449,7 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
             return res.status(400).send(err.message)
         case ValidationError:
             return res.status(400).json((err as ValidationError).validationRules)
-        case UserNotAuthenticatedError || TokenExpiredError || JsonWebTokenError || AuthCodeAlreadyUsed:
+        case UserNotAuthenticatedError || jwt.TokenExpiredError || jwt.JsonWebTokenError || AuthCodeAlreadyUsed:
             return res.status(401).send(err.message)
         case OAuthAccessTokenExchangeFailedRequest:
             const accessTokenExchangeError = err as OAuthAccessTokenExchangeFailedRequest

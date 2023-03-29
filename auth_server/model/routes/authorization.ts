@@ -3,23 +3,23 @@ import { generateUrlWithQueryParams } from '../../../common/utils/generationUtil
 import { HttpLink } from '../../../common/utils/io-ts-extension/refinements/Link'
 import { Scope } from '../db/Scope';
 
-export const ClientAuthorizationQueryParams = t.type({
-    response_type: t.union([t.literal('code'), t.literal('implicit')]),
+export const ClientAuthorizationQueryParamsTypeCheck = t.type({
+    response_type: t.literal('code'),
     client_id: t.string,
     redirect_uri: HttpLink,
     scope: t.string,
     state: t.string
 })
 
-export const AuthQueryParamsWithUserChoice = t.type({
-    ...ClientAuthorizationQueryParams.props,
+export const AuthQueryParamsWithUserChoiceTypeCheck = t.type({
+    ...ClientAuthorizationQueryParamsTypeCheck.props,
     ...t.type({
         user_choice: t.union([t.literal('allow'), t.literal('deny')])
     }).props
 })
 
 export type AuthRequestParamsShared = {
-    response_type: "code" | "implicit";
+    response_type: "code";
     client_id: string;
     redirect_uri: string;
     state: string;
@@ -49,22 +49,4 @@ export class OAuthCodeFailedRequest {
             error_description: this.errorDescription
         })
     }
-}
-
-export type AuthCodePayload = {
-    client_id: string,
-    redirect_uri: string,
-    scope: string
-}
-
-export type AuthCodeExtendedPayload = AuthCodePayload & {
-    jti: string,
-    sub: string,
-    iss: string,
-    aud: string
-}
-
-export type OAuthRedirectionQueryParams = {
-    code: string,
-    state: string
 }

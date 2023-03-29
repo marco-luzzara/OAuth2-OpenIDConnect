@@ -1,24 +1,14 @@
 import express, { Express, Request, Response, NextFunction } from "express";
-import axios, { AxiosResponse } from 'axios';
 import { useLogger } from '../common/utils/loggingUtils';
-import dirName, { getEnvOrExit } from '../common/utils/envUtils';
-import cookieParser from 'cookie-parser';
-import path from 'path';
-import { asyncExitHook } from 'exit-hook';
-import crypto from 'crypto'
-import { createClient } from 'redis';
-import RedisStore from 'connect-redis';
-import session from 'express-session';
+import { getEnvOrExit } from '../common/utils/envUtils';
 import { promisify } from 'util';
 import { catchAsyncErrors } from '../common/utils/errorHandlingUtils';
-import { validateQueryParams } from '../common/utils/validationUtils';
-import { ValidationError } from '../common/CustomErrors';
-import { generateUrlWithQueryParams } from '../common/utils/generationUtils';
 import { MongoClient } from "mongodb";
-import jwt, { Secret, VerifyOptions } from "jsonwebtoken";
+import jwt, { JsonWebTokenError, Secret, TokenExpiredError, VerifyOptions } from "jsonwebtoken";
 import { UserRepoMongo } from "./repositories/UserRepo";
 import { User } from "./model/db/User";
-import { InvalidToken } from "./model/errors";
+import { InvalidToken, NotExistingUser } from "./model/errors";
+import { AccessTokenExtendedPayload } from '../common/types/oauth_types'
 
 // *********************** express setup
 const app: Express = express();
@@ -58,6 +48,24 @@ const USER_ROUTE = '/user'
 
 // *********************** routes
 
+function refineUserObjectBasedOnScopes(user: User, scopes: string[]): Pick<User, 'username'> & Partial<Omit<User, '_id' | 'subject' | 'username'>> {
+    let retUser = {
+        username: user.username
+    }
+
+    if (scopes.includes('contacts.read'))
+        retUser['contacts'] = user.contacts
+
+    if (scopes.includes('profile.read'))
+        retUser['profile'] = user.profile
+
+    if (scopes.includes('payments.read'))
+        retUser['payments'] = user.payments
+
+    return retUser
+}
+
+
 /**
  * get the data associated to the user corresponding to the subject in the bearer token
  */
@@ -67,18 +75,28 @@ app.get(USER_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next: N
         throw new InvalidToken()
 
     const token = authHeader.substring('Bearer '.length)
-    const decodedToken = await jwtVerify(token, AUTH_SERVER_PUBLIC_KEY, {
+    const decodedToken: AccessTokenExtendedPayload = await jwtVerify(token, AUTH_SERVER_PUBLIC_KEY, {
         issuer: 'auth-server',
         audience: 'resource-server',
         algorithms: ['RS256']
     })
+
+    const user = await userRepo.getUserBySubject(decodedToken.sub)
+    if (user === null)
+        throw new NotExistingUser()
+
+    const scopes = decodedToken.scope.split('+')
+
+    res.json(refineUserObjectBasedOnScopes(user, scopes))
 }));
 
 // *********************** error handling
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
     switch (err.constructor) {
-        case InvalidToken:
+        case InvalidToken || TokenExpiredError || JsonWebTokenError:
             return res.status(401).send(err.message)
+        case NotExistingUser:
+            return res.status(404).send(err.message)
         default:
             console.log(err)
             return res.status(500).send(err.message)
