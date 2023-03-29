@@ -15,7 +15,7 @@
 
         .mdl-grid {
             margin-top: 10%;
-            max-width: 30%;
+            justify-content: center;
         }
 
         .mdl-card__actions {
@@ -29,7 +29,7 @@
         <%- include('partials/header') %>
         <main class="mdl-layout__content">
             <div class="mdl-grid">
-                <div class="mdl-card mdl-cell mdl-cell--12-col mdl-shadow--8dp" id="card-oauth-flow">
+                <div class="mdl-card mdl-cell mdl-cell--5-col mdl-shadow--8dp" id="card-oauth-flow">
                     <div class="mdl-card__title">
                         <h2 class="mdl-card__title-text">Get data from resource server</h2>
                     </div>
@@ -71,7 +71,7 @@
                 scope: checkedScopes.join('+')
             }
 
-            window.location.href = `${window.location.origin}<%- startOAuthRoute %>?${new URLSearchParams(authorizeParams).toString()}`
+            window.open(`${window.location.origin}<%- startOAuthRoute %>?${new URLSearchParams(authorizeParams).toString()}`, '_blank')
         }
     </script>
 </body>

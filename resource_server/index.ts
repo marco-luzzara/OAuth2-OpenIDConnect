@@ -4,11 +4,12 @@ import { getEnvOrExit } from '../common/utils/envUtils';
 import { promisify } from 'util';
 import { catchAsyncErrors } from '../common/utils/errorHandlingUtils';
 import { MongoClient } from "mongodb";
-import jwt, { JsonWebTokenError, Secret, TokenExpiredError, VerifyOptions } from "jsonwebtoken";
+import jwt, { Secret, VerifyOptions } from "jsonwebtoken";
 import { UserRepoMongo } from "./repositories/UserRepo";
 import { User } from "./model/db/User";
 import { InvalidToken, NotExistingUser } from "./model/errors";
 import { AccessTokenExtendedPayload } from '../common/types/oauth_types'
+import { asyncExitHook } from "exit-hook";
 
 // *********************** express setup
 const app: Express = express();
@@ -49,7 +50,7 @@ const USER_ROUTE = '/user'
 // *********************** routes
 
 function refineUserObjectBasedOnScopes(user: User, scopes: string[]): Pick<User, 'username'> & Partial<Omit<User, '_id' | 'subject' | 'username'>> {
-    let retUser = {
+    let retUser: ReturnType<typeof refineUserObjectBasedOnScopes> = {
         username: user.username
     }
 
@@ -93,7 +94,7 @@ app.get(USER_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next: N
 // *********************** error handling
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
     switch (err.constructor) {
-        case InvalidToken || TokenExpiredError || JsonWebTokenError:
+        case InvalidToken || jwt.TokenExpiredError || jwt.JsonWebTokenError:
             return res.status(401).send(err.message)
         case NotExistingUser:
             return res.status(404).send(err.message)
@@ -102,3 +103,14 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
             return res.status(500).send(err.message)
     }
 })
+
+app.listen(parseInt(PORT), HOST, () => {
+    console.log(`⚡️[server]: application is running at ${HOST}:${PORT}`);
+});
+
+asyncExitHook(async () => {
+    console.log('Disconnecting Mongo client');
+    await mongoClient.close()
+}, {
+    minimumWait: 300
+});

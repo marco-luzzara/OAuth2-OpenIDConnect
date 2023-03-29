@@ -15,7 +15,7 @@
 
         .mdl-grid {
             margin-top: 10%;
-            max-width: 30%;
+            justify-content: center;
         }
 
         .mdl-card__actions {
@@ -26,9 +26,10 @@
 
 <body>
     <div class="mdl-layout mdl-js-layout">
+        <%- include('partials/header') %>
         <main class="mdl-layout__content">
             <div class="mdl-grid">
-                <div class="mdl-card mdl-cell mdl-cell--12-col mdl-shadow--8dp" id="card-permission-request">
+                <div class="mdl-card mdl-cell mdl-cell--4-col mdl-shadow--8dp" id="card-permission-request">
                     <div class="mdl-card__title">
                         <h2 class="mdl-card__title-text">Permission Request</h2>
                     </div>
@@ -37,11 +38,13 @@
                             permissions
                         </h4>
                         <ul id="ul-requested-scopes" class="demo-list-control mdl-list">
+                            <hr />
                             <% for (let scope of authParams.scope) { %>
                             <li class="mdl-list__item">
                                 <div class="mdl-list__item-primary-content"><%= scope.name %></div>
                                 <div class="mdl-list__item-secondary-content"><%= scope.description %></div>
                             </li>
+                            <hr />
                             <% } %>
                         </ul>
                     </div>
@@ -68,7 +71,7 @@
                 response_type: 'code',
                 client_id: '<%- authParams.client_id %>',
                 redirect_uri: '<%- authParams.redirect_uri %>',
-                scope: '<%- authParams.scope.join("+") %>',
+                scope: '<%- authParams.scope.map(s => s.name).join("+") %>',
                 state: '<%- authParams.state %>',
                 user_choice: btn.dataset.action
             }).toString()

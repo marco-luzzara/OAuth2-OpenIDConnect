@@ -5,7 +5,7 @@
   "main": "index.ts",
   "type": "module",
   "scripts": {
-    "build": "rm -rf ./dist/$1 && npx tsc $1 && ( find . -name \"$1/*.ejs\" | xargs cp --parents -t ./dist )",
+    "build": "build_sub_project() { rm -rf ./dist/$1 && npx tsc && ( find . -wholename \"$1/*.ejs\" | xargs --no-run-if-empty cp --parents -t ./dist ) ; } ; build_sub_project",
     "client": "npm run build ./client && node --es-module-specifier-resolution=node -r dotenv/config dist/client/index.js dotenv_config_path=./client/.env",
     "auth_server": "npm run build ./auth_server && node --es-module-specifier-resolution=node -r dotenv/config dist/auth_server/index.js dotenv_config_path=./auth_server/.env",
     "resource_server": "npm run build ./resource_server && node --es-module-specifier-resolution=node -r dotenv/config dist/resource_server/index.js dotenv_config_path=./resource_server/.env",
