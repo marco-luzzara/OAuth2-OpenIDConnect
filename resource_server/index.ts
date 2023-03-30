@@ -66,7 +66,6 @@ function refineUserObjectBasedOnScopes(user: User, scopes: string[]): Pick<User,
     return retUser
 }
 
-
 /**
  * get the data associated to the user corresponding to the subject in the bearer token
  */
@@ -81,8 +80,9 @@ app.get(USER_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next: N
         audience: 'resource-server',
         algorithms: ['RS256']
     })
+    const subject = parseInt(decodedToken.sub)
 
-    const user = await userRepo.getUserBySubject(decodedToken.sub)
+    const user = await userRepo.getUserBySubject(subject)
     if (user === null)
         throw new NotExistingUser()
 

@@ -23,7 +23,7 @@ import { LogoutQueryParams } from './model/routes/logout';
 import { Scope } from './model/db/Scope';
 import cors from 'cors'
 import { AccessTokenExchangeBodyTypeCheck } from './model/routes/access_token_exchange';
-import { AccessTokenExchangeResponse, AccessTokenPayload, AuthCodeExtendedPayload, AuthCodePayload, OAuthRedirectionQueryParams, RefreshTokenExtendedPayload, RefreshTokenPayload } from '../common/types/oauth_types'
+import { AccessTokenExchangeResponse, AccessTokenPayload, AuthCodeExtendedPayload, AuthCodePayload, OAuthRedirectionQueryParams, RefreshTokenExtendedPayload, RefreshTokenPayload, TokenBasicPayload } from '../common/types/oauth_types'
 import jwt, { Secret, SignOptions, VerifyOptions } from 'jsonwebtoken'
 import { ClientRepoMongo } from './repositories/ClientRepo';
 import { UserRepoMongo } from './repositories/UserRepo';
@@ -72,15 +72,15 @@ let redisClient = createClient({
 })
 await redisClient.connect()
 let redisStore = new RedisStore({
-    client: redisClient,
-    prefix: "auth-server",
+    client: redisClient
 })
 
 // *********************** session middleware
 const sessionConfig = {
+    name: 'connect.sid.auth_server',
     store: redisStore,
-    resave: true, // required: force lightweight session keep alive (touch)
-    saveUninitialized: true, // recommended: only save session when data exists
+    resave: false, // required: force lightweight session keep alive (touch)
+    saveUninitialized: false, // recommended: only save session when data exists
     secret: SESSION_SECRET,
     cookie: {
         secure: "auto" as "auto", // determine the secure over https depending on the connection config
@@ -257,7 +257,7 @@ app.get(AUTHORIZATION_ROUTE, isAuthenticated, catchAsyncErrors(async (req: Reque
             const authCode = await jwtSign(authCodePayload, PRIVATE_KEY, {
                 algorithm: 'RS256',
                 issuer: 'auth-server',
-                subject: req.session.subject,
+                subject: `${req.session.subject}`, // subject must be a string
                 audience: 'auth-server',
                 jwtid: generateUUIDv1(),
                 expiresIn: MAX_AUTH_CODE_LIFETIME
@@ -274,7 +274,7 @@ app.get(AUTHORIZATION_ROUTE, isAuthenticated, catchAsyncErrors(async (req: Reque
 /**
  * exchange the auth code with the access token or get a new access token from a refresh token
  */
-app.post(ACCESS_TOKEN_ROUTE, isAuthenticated, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) =>
+app.post(ACCESS_TOKEN_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) =>
     await validateUnionBody(req, res, next, AccessTokenExchangeBodyTypeCheck,
         // TODO: the ValidationError message should comply with the json error with "error" and "error_description"
         async (req, res: Response, next: NextFunction) => {
@@ -343,7 +343,7 @@ app.post(ACCESS_TOKEN_ROUTE, isAuthenticated, catchAsyncErrors(async (req: Reque
             const accessToken = await jwtSign(accessTokenPayload, PRIVATE_KEY, {
                 algorithm: 'RS256',
                 issuer: 'auth-server',
-                subject: req.session.subject,
+                subject: `${accessInfo.sub}`,
                 audience: 'resource-server',
                 jwtid: generateUUIDv1(),
                 expiresIn: MAX_ACCESS_TOKEN_LIFETIME
@@ -358,7 +358,7 @@ app.post(ACCESS_TOKEN_ROUTE, isAuthenticated, catchAsyncErrors(async (req: Reque
             const refreshToken = await jwtSign(refreshTokenPayload, PRIVATE_KEY, {
                 algorithm: 'RS256',
                 issuer: 'auth-server',
-                subject: req.session.subject,
+                subject: `${accessInfo.sub}`,
                 audience: 'auth-server',
                 jwtid: generateUUIDv1(),
                 expiresIn: MAX_REFRESH_TOKEN_LIFETIME

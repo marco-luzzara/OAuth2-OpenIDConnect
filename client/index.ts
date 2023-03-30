@@ -46,15 +46,15 @@ let redisClient = createClient({
 })
 await redisClient.connect()
 let redisStore = new RedisStore({
-    client: redisClient,
-    prefix: "client",
+    client: redisClient
 })
 
 // *********************** session middleware
-const sessionConfig = {
+const sessionConfig: session.SessionOptions = {
+    name: 'connect.sid.client',
     store: redisStore,
-    resave: true, // required: force lightweight session keep alive (touch)
-    saveUninitialized: true, // recommended: only save session when data exists
+    resave: false, // required: force lightweight session keep alive (touch)
+    saveUninitialized: false, // recommended: only save session when data exists
     secret: SESSION_SECRET,
     cookie: {
         secure: "auto" as "auto", // determine the secure over https depending on the connection config
@@ -146,9 +146,7 @@ app.get(HOME_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next: N
 app.get(START_OAUTH_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) =>
     await validateQueryParams(req, res, next, OAuthSelectScopesQueryParamsTypeCheck,
         async (req, res: Response, next: NextFunction) => {
-            await promisify(req.session.regenerate).call(req.session)
             req.session.oauthState = encodeOAuthStateParam(`${baseUrl}${req.query.callbackRoute}`)
-            await promisify(req.session.save).call(req.session)
 
             const oauthQueryParams: OAuthStartFlowQueryParams = {
                 client_id: clientId,
@@ -181,18 +179,18 @@ app.get(AUTH_CALLBACK_ROUTE, catchAsyncErrors(async (req: Request, res: Response
         async (req, res: Response, next: NextFunction) => {
             if (req.query.state !== req.session.oauthState)
                 throw new ValidationError('state param has been manipulated')
-            const redirectUri = decodeOAuthStateParam(req.query.state)
+            const callbackUri = decodeOAuthStateParam(req.query.state)
 
             const accessTokenExchangeBody: AccessTokenExchangeBody = {
                 client_id: clientId,
                 redirect_uri: redirectUri,
-                code: req.query.authorization_code,
+                code: req.query.code,
                 client_secret: clientSecret,
                 grant_type: 'authorization_code'
             }
             await sendTokenExchangeRequest(req, accessTokenExchangeBody)
 
-            res.redirect(redirectUri)
+            res.redirect(callbackUri)
         })
 ));
 
@@ -233,7 +231,7 @@ app.get(USER_DATA_ROUTE, hasAuthorization, catchAsyncErrors(async (req: Request,
     const userData = userRes.data
 
     res.render('user_data_viewer', {
-        userData: userData
+        userData: JSON.stringify(userData, null, 4)
     });
 }));
 

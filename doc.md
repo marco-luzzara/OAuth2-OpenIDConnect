@@ -387,5 +387,11 @@ You can request both an ID token and access token in the same flow in order to b
 
 ---
 
+## Additional Sources
+
+- [User Data Management](https://authguidance.com/user-data/) - How to map the access token subject to the user data in the resource server ?
+
+---
+
 ## Specs Map
 Read them [here](https://www.oauth.com/oauth2-servers/map-oauth-2-0-specs/)
