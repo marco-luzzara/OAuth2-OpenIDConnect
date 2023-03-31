@@ -73,7 +73,9 @@
                 redirect_uri: '<%- authParams.redirect_uri %>',
                 scope: '<%- authParams.scope.map(s => s.name).join("+") %>',
                 state: '<%- authParams.state %>',
-                user_choice: btn.dataset.action
+                user_choice: btn.dataset.action,
+                code_challenge: '<%- authParams.code_challenge %>',
+                code_challenge_method: '<%- authParams.code_challenge_method %>',
             }).toString()
             window.location.href = `${window.location.origin}${authorizationRoute}?${queryParams}`
         }

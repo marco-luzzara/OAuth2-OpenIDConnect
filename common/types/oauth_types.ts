@@ -1,16 +1,21 @@
-export type OAuthStartFlowQueryParams = {
+export type PKCEParams = {
+    code_challenge: string,
+    code_challenge_method: 'S256'
+}
+
+export type OAuthRequestQueryParams = {
     response_type: 'code',
     client_id: string,
     redirect_uri: string,
     scope: string,
     state: string
-}
+} & PKCEParams
 
 export type AuthCodePayload = {
     client_id: string,
     redirect_uri: string,
     scope: string
-}
+} & PKCEParams
 
 export type OAuthRedirectionQueryParams = {
     code: string,
@@ -29,7 +34,8 @@ export type AccessTokenExchangeBody = {
     grant_type: 'authorization_code',
     redirect_uri: string,
     client_id: string,
-    client_secret: string
+    client_secret: string,
+    code_verifier: string
 }
 
 export type RefreshTokenExchangeBody = {

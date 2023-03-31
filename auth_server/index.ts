@@ -4,7 +4,7 @@ import { validateBody, validateQueryParams, validateUnionBody } from '../common/
 import { asyncExitHook } from 'exit-hook';
 import { User } from './model/db/User';
 import { Client } from './model/db/Client';
-import { generateRandomHexString, generateUrlWithQueryParams, generateUUIDv1 } from '../common/utils/generationUtils';
+import { generateCodeChallenge, generateRandomHexString, generateUrlWithQueryParams, generateUUIDv1 } from '../common/utils/generationUtils';
 import { catchAsyncErrors } from '../common/utils/errorHandlingUtils';
 import { buildClientRegistrationResponse, ClientRegistrationBody } from './model/routes/registration';
 import { useLogger } from '../common/utils/loggingUtils';
@@ -18,7 +18,7 @@ import { AuthCodeAlreadyUsed, OAuthAccessTokenExchangeFailedRequest, Unregistere
 import { promisify } from 'util';
 import dirName, { getEnvOrExit } from '../common/utils/envUtils';
 import path from 'path'
-import { AuthQueryParamsWithUserChoiceTypeCheck, AuthRequestParams, ClientAuthorizationQueryParamsTypeCheck, OAuthCodeFailedRequest, ValidatedAuthRequestParams } from './model/routes/authorization';
+import { AuthQueryParamsWithUserChoiceTypeCheck, ClientAuthorizationQueryParamsTypeCheck, OAuthCodeFailedRequest, ValidatedAuthRequestParams } from './model/routes/authorization';
 import { LogoutQueryParams } from './model/routes/logout';
 import { Scope } from './model/db/Scope';
 import cors from 'cors'
@@ -29,6 +29,7 @@ import { ClientRepoMongo } from './repositories/ClientRepo';
 import { UserRepoMongo } from './repositories/UserRepo';
 import { ScopeRepoMongo } from './repositories/ScopeRepo';
 import { ValidationError } from '../common/CustomErrors';
+import { OAuthRequestQueryParams } from '../common/types/oauth_types'
 
 // *********************** express setup
 const app: Express = express();
@@ -155,7 +156,7 @@ app.get(SCOPES_ROUTE, cors(), catchAsyncErrors(async (req: Request, res: Respons
 
 /**
  * starts the flow, by first asking the user if he wants to login with a new account or continue
- * with the current account.
+ * with the current account if already logged, otherwise shows the login page.
  */
 app.get(AUTHORIZE_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) =>
     await validateQueryParams(req, res, next, ClientAuthorizationQueryParamsTypeCheck,
@@ -192,7 +193,7 @@ async function getValidatedScopes(scope: string): Promise<Scope[] | null> {
  * @param params the oauth params
  * @returns the validated and cleaned oauth params or the error code + error description
  */
-async function getValidatedAuthParams(params: AuthRequestParams):
+async function getValidatedAuthParams(params: OAuthRequestQueryParams):
     Promise<ValidatedAuthRequestParams | OAuthCodeFailedRequest> {
     const foundClient = await clientRepo.getByClientId(params.client_id)
 
@@ -252,7 +253,9 @@ app.get(AUTHORIZATION_ROUTE, isAuthenticated, catchAsyncErrors(async (req: Reque
             const authCodePayload: AuthCodePayload = {
                 client_id: req.query.client_id,
                 redirect_uri: req.query.redirect_uri,
-                scope: req.query.scope
+                scope: req.query.scope,
+                code_challenge: req.query.code_challenge,
+                code_challenge_method: req.query.code_challenge_method
             }
             const authCode = await jwtSign(authCodePayload, PRIVATE_KEY, {
                 algorithm: 'RS256',
@@ -271,6 +274,14 @@ app.get(AUTHORIZATION_ROUTE, isAuthenticated, catchAsyncErrors(async (req: Reque
         })
 ))
 
+function verifyCodeChallenge(challengeMethod: string, codeChallenge: string, codeVerifier: string): void {
+    if (challengeMethod !== 'S256')
+        throw new OAuthAccessTokenExchangeFailedRequest(400, 'invalid_request', 'the only allowed code_challenge_method is S256')
+
+    if (generateCodeChallenge(codeVerifier) !== codeChallenge)
+        throw new OAuthAccessTokenExchangeFailedRequest(400, 'invalid_request', 'the code_verifier is not correct')
+}
+
 /**
  * exchange the auth code with the access token or get a new access token from a refresh token
  */
@@ -285,6 +296,8 @@ app.post(ACCESS_TOKEN_ROUTE, catchAsyncErrors(async (req: Request, res: Response
                     issuer: 'auth-server',
                     algorithms: ['RS256']
                 })
+
+                verifyCodeChallenge(decodedCode.code_challenge_method, decodedCode.code_challenge, req.body.code_verifier)
 
                 const client = await clientRepo.getByClientId(decodedCode.client_id)
                 if (client === null)

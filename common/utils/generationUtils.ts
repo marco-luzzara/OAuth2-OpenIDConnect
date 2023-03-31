@@ -1,3 +1,4 @@
+import base64url from "base64url";
 import crypto from "crypto";
 import { v1 as uuidv1 } from 'uuid'
 
@@ -13,4 +14,9 @@ export function generateUUIDv1(): string {
 export function generateUrlWithQueryParams(url: string, queryParams: any): string {
     const queryParamsStr = new URLSearchParams(queryParams).toString()
     return `${url}?${queryParamsStr}`
+}
+
+export function generateCodeChallenge(codeVerifier: string): string {
+    const hashedCodeVerifier = crypto.createHash('sha256').update(codeVerifier).digest()
+    return base64url(hashedCodeVerifier)
 }

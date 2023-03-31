@@ -155,7 +155,7 @@ To exchange the authorization code for an access token, the app makes a POST req
 - **redirect_uri (possibly required)**: If the redirect URL was included in the initial authorization request, it must be included in the token request as well, and **must be identical**.
 - **Client Authentication (required)**: The service will require the client authenticate itself when making the request for an access token. **Typically services support client authentication via HTTP Basic Auth with the client’s client_id and client_secret**. However, some services support authentication by accepting the client_id and client_secret as POST body parameters. 
 
-If the service supports PKCE for web server apps, then the client will need to include the followup PKCE parameter when exchanging the authorization code as well. The authorization server should calculate the SHA256 hash of the code_verifier presented in this token request, and compare that with the code_challenge presented in the authorization request. If they match, the authorization server can be confident that it’s the same client making this token request that made the original authorization request.
+If the service supports PKCE for web server apps, then the client will need to include the followup PKCE parameter when exchanging the authorization code as well. The authorization server should calculate the SHA256 hash of the code_verifier presented in this token request, and compare that with the code_challenge presented in the authorization request. If they match, the authorization server can be confident that it’s the same client making this token request that made the original authorization request. In the authorization request, which is sent in the front channel, I always send the hashed value. But on the code exchange request, I send the code verifier (un-hashed value), so that the authorization server can hash it and verify whether it corresponds to the one associated to the auth code released. 
 
 ```
 POST /oauth/token HTTP/1.1
@@ -389,7 +389,8 @@ You can request both an ID token and access token in the same flow in order to b
 
 ## Additional Sources
 
-- [User Data Management](https://authguidance.com/user-data/) - How to map the access token subject to the user data in the resource server ?
+- [User Data Management](https://authguidance.com/user-data/) - How to map the access token subject to the user data in the resource server?
+- [PKCE](https://www.youtube.com/watch?v=td00HpMI3Q8)
 
 ---
 

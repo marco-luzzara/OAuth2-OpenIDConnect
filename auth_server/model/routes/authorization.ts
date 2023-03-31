@@ -1,4 +1,5 @@
 import * as t from 'io-ts'
+import { OAuthRequestQueryParams } from '../../../common/types/oauth_types';
 import { generateUrlWithQueryParams } from '../../../common/utils/generationUtils';
 import { HttpLink } from '../../../common/utils/io-ts-extension/refinements/Link'
 import { Scope } from '../db/Scope';
@@ -8,7 +9,9 @@ export const ClientAuthorizationQueryParamsTypeCheck = t.type({
     client_id: t.string,
     redirect_uri: HttpLink,
     scope: t.string,
-    state: t.string
+    state: t.string,
+    code_challenge: t.string,
+    code_challenge_method: t.literal('S256')
 })
 
 export const AuthQueryParamsWithUserChoiceTypeCheck = t.type({
@@ -18,16 +21,7 @@ export const AuthQueryParamsWithUserChoiceTypeCheck = t.type({
     }).props
 })
 
-export type AuthRequestParamsShared = {
-    response_type: "code";
-    client_id: string;
-    redirect_uri: string;
-    state: string;
-}
-export type AuthRequestParams = AuthRequestParamsShared & {
-    scope: string;
-}
-export type ValidatedAuthRequestParams = AuthRequestParamsShared & {
+export type ValidatedAuthRequestParams = Omit<OAuthRequestQueryParams, 'scope'> & {
     applicationName: string,
     scope: Scope[]
 }

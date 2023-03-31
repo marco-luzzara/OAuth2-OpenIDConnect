@@ -9,13 +9,12 @@ import crypto from 'crypto'
 import { createClient } from 'redis';
 import RedisStore from 'connect-redis';
 import session from 'express-session';
-import { promisify } from 'util';
 import { catchAsyncErrors } from '../common/utils/errorHandlingUtils';
 import { validateQueryParams } from '../common/utils/validationUtils';
 import { AuthorizationCallbackParamsTypeCheck } from './model/routes/access_token_exchange';
-import { AccessTokenExchangeBody, AccessTokenExchangeResponse, OAuthStartFlowQueryParams, RefreshTokenExchangeBody } from '../common/types/oauth_types'
+import { AccessTokenExchangeBody, AccessTokenExchangeResponse, OAuthRequestQueryParams, RefreshTokenExchangeBody } from '../common/types/oauth_types'
 import { ValidationError } from '../common/CustomErrors';
-import { generateUrlWithQueryParams } from '../common/utils/generationUtils';
+import { generateCodeChallenge, generateUrlWithQueryParams } from '../common/utils/generationUtils';
 import { OAuthSelectScopesQueryParamsTypeCheck } from './model/routes/authorization';
 import { UnauthorizedRequest } from './model/errors';
 
@@ -66,6 +65,7 @@ const sessionConfig: session.SessionOptions = {
 declare module 'express-session' {
     interface SessionData {
         oauthState: string
+        codeVerifier: string
         accessToken: string,
         tokenExpirationDate: number,
         refreshToken: string
@@ -140,6 +140,13 @@ app.get(HOME_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next: N
     });
 }));
 
+function generateCodeVerifier(length: number): string {
+    const possibleChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
+    return Array(length).fill('')
+        .map(v => possibleChars.charAt(Math.floor(Math.random() * possibleChars.length)))
+        .join('')
+}
+
 /**
  * start the oauth flow by requesting an auth code
  */
@@ -147,13 +154,17 @@ app.get(START_OAUTH_ROUTE, catchAsyncErrors(async (req: Request, res: Response, 
     await validateQueryParams(req, res, next, OAuthSelectScopesQueryParamsTypeCheck,
         async (req, res: Response, next: NextFunction) => {
             req.session.oauthState = encodeOAuthStateParam(`${baseUrl}${req.query.callbackRoute}`)
+            req.session.codeVerifier = generateCodeVerifier(64)
+            const codeChallenge = generateCodeChallenge(req.session.codeVerifier)
 
-            const oauthQueryParams: OAuthStartFlowQueryParams = {
+            const oauthQueryParams: OAuthRequestQueryParams = {
                 client_id: clientId,
                 redirect_uri: redirectUri,
                 response_type: 'code',
                 scope: req.query.scope,
-                state: req.session.oauthState
+                state: req.session.oauthState,
+                code_challenge: codeChallenge,
+                code_challenge_method: 'S256'
             }
             res.redirect(generateUrlWithQueryParams(`${AUTH_SERVER_ENDPOINT}/oauth/authorize`, oauthQueryParams));
         })
@@ -186,7 +197,8 @@ app.get(AUTH_CALLBACK_ROUTE, catchAsyncErrors(async (req: Request, res: Response
                 redirect_uri: redirectUri,
                 code: req.query.code,
                 client_secret: clientSecret,
-                grant_type: 'authorization_code'
+                grant_type: 'authorization_code',
+                code_verifier: req.session.codeVerifier!
             }
             await sendTokenExchangeRequest(req, accessTokenExchangeBody)
 

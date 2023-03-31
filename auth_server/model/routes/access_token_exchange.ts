@@ -7,7 +7,8 @@ export const AccessTokenExchangeBodyTypeCheck = t.union([
         grant_type: t.literal('authorization_code'),
         redirect_uri: HttpLink,
         client_id: t.string,
-        client_secret: t.string
+        client_secret: t.string,
+        code_verifier: t.string
     }),
     t.type({
         grant_type: t.literal('refresh_token'),
