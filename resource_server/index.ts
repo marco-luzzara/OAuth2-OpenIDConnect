@@ -8,7 +8,7 @@ import jwt, { Secret, VerifyOptions } from "jsonwebtoken";
 import { UserRepoMongo } from "./repositories/UserRepo";
 import { User } from "./model/db/User";
 import { InvalidToken, NotExistingUser } from "./model/errors";
-import { AccessTokenExtendedPayload } from '../common/types/oauth_types'
+import { AccessTokenExtendedPayload, UserInfoResponse } from '../common/types/oauth_types'
 import { asyncExitHook } from "exit-hook";
 
 // *********************** express setup
@@ -37,15 +37,7 @@ const jwtVerify = promisify<string, Secret, VerifyOptions, any>(jwt.verify)
 
 // *********************** route constants
 const USER_ROUTE = '/user'
-
-// *********************** auth middleware
-
-// function isAuthenticated(req: Request, res: Response, next: NextFunction) {
-//     if (!req.session.username)
-//         next(new UserNotAuthenticatedError())
-//     else
-//         next()
-// }
+const USER_INFO_ROUTE = '/userinfo'
 
 // *********************** routes
 
@@ -66,10 +58,7 @@ function refineUserObjectBasedOnScopes(user: User, scopes: string[]): Pick<User,
     return retUser
 }
 
-/**
- * get the data associated to the user corresponding to the subject in the bearer token
- */
-app.get(USER_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) => {
+async function getDecodedToken(req: Request): Promise<AccessTokenExtendedPayload> {
     const authHeader = req.header('Authorization')
     if (!authHeader?.startsWith('Bearer '))
         throw new InvalidToken()
@@ -80,7 +69,16 @@ app.get(USER_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next: N
         audience: 'resource-server',
         algorithms: ['RS256']
     })
-    const subject = parseInt(decodedToken.sub)
+
+    return decodedToken
+}
+
+/**
+ * get the data associated to the user corresponding to the subject in the bearer token
+ */
+app.get(USER_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) => {
+    const decodedToken = await getDecodedToken(req)
+    const subject = decodedToken.sub
 
     const user = await userRepo.getUserBySubject(subject)
     if (user === null)
@@ -89,6 +87,24 @@ app.get(USER_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next: N
     const scopes = decodedToken.scope.split('+')
 
     res.json(refineUserObjectBasedOnScopes(user, scopes))
+}));
+
+/**
+ * get user information (required by OpenID Connect)
+ */
+app.get(USER_INFO_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) => {
+    const decodedToken = await getDecodedToken(req)
+    const subject = decodedToken.sub
+
+    const user = await userRepo.getUserBySubject(subject)
+    if (user === null)
+        throw new NotExistingUser()
+
+    const userInfoResponse: UserInfoResponse = {
+        username: user.username,
+        email: user.profile.mail_address
+    }
+    res.json(userInfoResponse)
 }));
 
 // *********************** error handling

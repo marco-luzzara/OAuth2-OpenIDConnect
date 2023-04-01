@@ -5,7 +5,7 @@ export interface Payment {
 
 export interface User {
     _id: any
-    subject: any // the corresponding id in the authorization server
+    subject: any // the corresponding subject in the authorization server
     username: string
     contacts: string[]
     profile: {

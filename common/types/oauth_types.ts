@@ -26,7 +26,8 @@ export type AccessTokenExchangeResponse = {
     token_type: "Bearer",
     expires_in: number,
     access_token: string,
-    refresh_token: string
+    refresh_token: string,
+    id_token?: string
 }
 
 export type AccessTokenExchangeBody = {
@@ -59,9 +60,15 @@ export type TokenBasicPayload = {
     jti: string,
     sub: string,
     iss: string,
-    aud: string
+    aud: string,
+    exp: number
 }
 
 export type AccessTokenExtendedPayload = AccessTokenPayload & TokenBasicPayload
 export type RefreshTokenExtendedPayload = RefreshTokenPayload & TokenBasicPayload
 export type AuthCodeExtendedPayload = AuthCodePayload & TokenBasicPayload
+
+export type UserInfoResponse = {
+    username: string,
+    email: string
+}

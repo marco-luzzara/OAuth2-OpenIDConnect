@@ -48,6 +48,7 @@ const HOST = getEnvOrExit('HOST')
 const PORT = getEnvOrExit('PORT')
 const baseUrl = `${NETWORK_PROTOCOL}://${HOST}:${PORT}`
 const DB_CONNECTION_STRING = getEnvOrExit('DB_CONNECTION_STRING')
+const SESSION_MAX_AGE = parseInt(getEnvOrExit('SESSION_MAX_AGE'))
 const SESSION_STORAGE_CONNECTION_STRING = getEnvOrExit('SESSION_STORAGE_CONNECTION_STRING')
 const SESSION_SECRET = getEnvOrExit('SESSION_SECRET')
 const PRIVATE_KEY = getEnvOrExit('PRIVATE_KEY')
@@ -55,6 +56,7 @@ const PUBLIC_KEY = getEnvOrExit('PUBLIC_KEY')
 const MAX_AUTH_CODE_LIFETIME = parseInt(getEnvOrExit('MAX_AUTH_CODE_LIFETIME'))
 const MAX_ACCESS_TOKEN_LIFETIME = parseInt(getEnvOrExit('MAX_ACCESS_TOKEN_LIFETIME'))
 const MAX_REFRESH_TOKEN_LIFETIME = parseInt(getEnvOrExit('MAX_REFRESH_TOKEN_LIFETIME'))
+const MAX_ID_TOKEN_LIFETIME = parseInt(getEnvOrExit('MAX_ID_TOKEN_LIFETIME'))
 
 // *********************** mongo setup
 const mongoClient = new MongoClient(DB_CONNECTION_STRING);
@@ -86,7 +88,7 @@ const sessionConfig = {
     cookie: {
         secure: "auto" as "auto", // determine the secure over https depending on the connection config
         httpOnly: true, // if true prevent client side JS from reading the cookie 
-        maxAge: 1000 * 60 * 5
+        maxAge: SESSION_MAX_AGE
     }
 }
 
@@ -182,7 +184,7 @@ async function getValidatedScopes(scope: string): Promise<Scope[] | null> {
     const requestScopes = scope.split('+')
     const foundScopes = await scopeRepo.getFromNames(requestScopes)
 
-    if (foundScopes.length === 0 || foundScopes.length < requestScopes.length)
+    if (foundScopes.length === 0 || foundScopes.length !== requestScopes.length)
         return null
 
     return foundScopes
@@ -377,13 +379,26 @@ app.post(ACCESS_TOKEN_ROUTE, catchAsyncErrors(async (req: Request, res: Response
                 expiresIn: MAX_REFRESH_TOKEN_LIFETIME
             })
 
-            const accessTokenBody: AccessTokenExchangeResponse = {
+            const tokenExchangeResponse: AccessTokenExchangeResponse = {
                 token_type: 'Bearer',
                 access_token: accessToken,
                 expires_in: MAX_ACCESS_TOKEN_LIFETIME,
                 refresh_token: refreshToken
             }
-            res.setHeader('Cache-Control', 'no-store').json(accessTokenBody)
+
+            if (accessInfo.scope.includes('openid')) {
+                tokenExchangeResponse.id_token = await jwtSign({}, PRIVATE_KEY, {
+                    algorithm: 'RS256',
+                    issuer: 'auth-server',
+                    subject: `${accessInfo.sub}`,
+                    audience: `${accessInfo.client_id}`,
+                    jwtid: generateUUIDv1(),
+                    expiresIn: MAX_ID_TOKEN_LIFETIME
+                })
+            }
+
+            res.setHeader('Cache-Control', 'no-store')
+                .setHeader('Pragma', 'no-cache').json(tokenExchangeResponse)
         })
 ))
 
@@ -429,7 +444,7 @@ app.post(LOGIN_ROUTE, cors(), catchAsyncErrors(async (req: Request, res: Respons
             // https://www.npmjs.com/package/express-session#user-content-user-login
             await promisify(req.session.regenerate).call(req.session)
             req.session.username = userFindOneResult.username
-            req.session.subject = userFindOneResult._id
+            req.session.subject = userFindOneResult.subject
             await promisify(req.session.save).call(req.session)
 
             res.status(200).end()

@@ -20,6 +20,7 @@ We need to create an `.env` file in the `auth_server` folder, containing the fol
 - `NETWORK_PROTOCOL`: http/https
 - `HOST`: localhost
 - `RESOURCE_SERVER_ENDPOINT`: the resource server endpoint
+- `SESSION_MAX_AGE`: is the expiration time (in milliseconds) of the session id associated to each user. **Note**: the tokens' lifetime should be lower or equal than this value, because tokens are assigned to the session object. Once the session is destroyed, tokens are lost as well.
 - `SESSION_STORAGE_CONNECTION_STRING`: the connection string of the db that stores the users' sessions
 - `SESSION_SECRET`: the secret used to encrypt the session id
 - `PRIVATE_KEY`: the private key used to sign the JWTs. Must be RSA at least 2048 bit
@@ -27,6 +28,7 @@ We need to create an `.env` file in the `auth_server` folder, containing the fol
 - `MAX_AUTH_CODE_LIFETIME`: the maximum number of seconds an auth code is considered valid
 - `MAX_ACCESS_TOKEN_LIFETIME`: the maximum number of seconds an access token is considered valid, before being refreshed
 - `MAX_REFRESH_TOKEN_LIFETIME`: the maximum number of seconds a refresh token is considered valid
+- `MAX_ID_TOKEN_LIFETIME`: maximum number of seconds an id token is considered valid
 
 Then we need 2 storages:
 - a Redis db for the users' sessions
@@ -44,6 +46,7 @@ We need to create an `.env` file in the `client` folder, containing the followin
 - `HOST`: localhost
 - `RESOURCE_SERVER_ENDPOINT`: the resource server endpoint
 - `AUTH_SERVER_ENDPOINT`: the authorization server endpoint
+- `SESSION_MAX_AGE`: is the expiration time (in milliseconds) of the session id associated to each user. **Note**: See `SESSION_MAX_AGE` notes in the Authorization server.
 - `SESSION_STORAGE_CONNECTION_STRING`: the connection string of the db that stores the users' sessions
 - `SESSION_SECRET`: the secret used to encrypt the session id
 - `AUTH_SERVER_PUBLIC_KEY`: the public key of the authorization server

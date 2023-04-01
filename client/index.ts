@@ -8,15 +8,17 @@ import { asyncExitHook } from 'exit-hook';
 import crypto from 'crypto'
 import { createClient } from 'redis';
 import RedisStore from 'connect-redis';
-import session from 'express-session';
+import session, { SessionData } from 'express-session';
 import { catchAsyncErrors } from '../common/utils/errorHandlingUtils';
 import { validateQueryParams } from '../common/utils/validationUtils';
 import { AuthorizationCallbackParamsTypeCheck } from './model/routes/access_token_exchange';
-import { AccessTokenExchangeBody, AccessTokenExchangeResponse, OAuthRequestQueryParams, RefreshTokenExchangeBody } from '../common/types/oauth_types'
+import { AccessTokenExchangeBody, AccessTokenExchangeResponse, OAuthRequestQueryParams, RefreshTokenExchangeBody, TokenBasicPayload, UserInfoResponse } from '../common/types/oauth_types'
 import { ValidationError } from '../common/CustomErrors';
 import { generateCodeChallenge, generateUrlWithQueryParams } from '../common/utils/generationUtils';
 import { OAuthSelectScopesQueryParamsTypeCheck } from './model/routes/authorization';
 import { UnauthorizedRequest } from './model/errors';
+import { promisify } from 'util';
+import jwt, { Secret, VerifyOptions } from 'jsonwebtoken';
 
 // *********************** express setup
 const app: Express = express();
@@ -36,8 +38,13 @@ const PORT = getEnvOrExit('PORT')
 const baseUrl = `${NETWORK_PROTOCOL}://${HOST}:${PORT}`
 const AUTH_SERVER_ENDPOINT = getEnvOrExit('AUTH_SERVER_ENDPOINT')
 const RESOURCE_SERVER_ENDPOINT = getEnvOrExit('RESOURCE_SERVER_ENDPOINT')
+const SESSION_MAX_AGE = parseInt(getEnvOrExit('SESSION_MAX_AGE'))
 const SESSION_STORAGE_CONNECTION_STRING = getEnvOrExit('SESSION_STORAGE_CONNECTION_STRING')
 const SESSION_SECRET = getEnvOrExit('SESSION_SECRET')
+const AUTH_SERVER_PUBLIC_KEY = getEnvOrExit('AUTH_SERVER_PUBLIC_KEY')
+
+// *********************** promisified functions
+const jwtVerify = promisify<string, Secret, VerifyOptions, any>(jwt.verify)
 
 // *********************** redis for sessions storage
 let redisClient = createClient({
@@ -58,12 +65,14 @@ const sessionConfig: session.SessionOptions = {
     cookie: {
         secure: "auto" as "auto", // determine the secure over https depending on the connection config
         httpOnly: true, // if true prevent client side JS from reading the cookie 
-        maxAge: 1000 * 60 * 5
+        maxAge: SESSION_MAX_AGE
     }
 }
 
 declare module 'express-session' {
     interface SessionData {
+        userId: any
+        idTokenExpirationDate: number
         oauthState: string
         codeVerifier: string
         accessToken: string,
@@ -71,6 +80,16 @@ declare module 'express-session' {
         refreshToken: string
         tokenType: 'Bearer'
     }
+}
+
+function resetSession(session: session.Session & Partial<SessionData>) {
+    session.userId = undefined
+    session.idTokenExpirationDate = undefined
+    session.oauthState = undefined
+    session.codeVerifier = undefined
+    session.accessToken = undefined
+    session.tokenExpirationDate = undefined
+    session.refreshToken = undefined
 }
 
 app.use(session(sessionConfig))
@@ -81,6 +100,7 @@ const HOME_ROUTE = '/'
 const START_OAUTH_ROUTE = '/start_oauth'
 const AUTH_CALLBACK_ROUTE = '/auth_callback'
 const USER_DATA_ROUTE = '/user_data'
+const USER_INFO_ROUTE = '/user_info'
 
 // *********************** client registration
 const redirectUri = `${baseUrl}${AUTH_CALLBACK_ROUTE}`
@@ -100,11 +120,14 @@ catch (err) {
 }
 
 // *********************** routes middleware
-function hasAuthorization(req: Request, res: Response, next: NextFunction) {
+async function checkAccessToken(req: Request, res: Response, next: NextFunction) {
     if (!req.session.accessToken)
         next(new UnauthorizedRequest())
-    else
+    else {
+        if (Date.now() >= req.session.tokenExpirationDate!)
+            await renewToken(req)
         next()
+    }
 }
 
 // *********************** routes
@@ -136,7 +159,9 @@ app.get(HOME_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next: N
     res.render('home', {
         scopes: scopesResponse.data,
         startOAuthRoute: START_OAUTH_ROUTE,
-        callbackRoute: USER_DATA_ROUTE
+        callbackRoute: USER_DATA_ROUTE,
+        userInfoRoute: USER_INFO_ROUTE,
+        userId: req.session.idTokenExpirationDate && Date.now() >= req.session.idTokenExpirationDate ? undefined : req.session.userId
     });
 }));
 
@@ -153,6 +178,7 @@ function generateCodeVerifier(length: number): string {
 app.get(START_OAUTH_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) =>
     await validateQueryParams(req, res, next, OAuthSelectScopesQueryParamsTypeCheck,
         async (req, res: Response, next: NextFunction) => {
+            resetSession(req.session)
             req.session.oauthState = encodeOAuthStateParam(`${baseUrl}${req.query.callbackRoute}`)
             req.session.codeVerifier = generateCodeVerifier(64)
             const codeChallenge = generateCodeChallenge(req.session.codeVerifier)
@@ -179,6 +205,16 @@ async function sendTokenExchangeRequest(req: Request, body: AccessTokenExchangeB
     // * 1000 because the expires_in field is expressed in seconds
     req.session.tokenExpirationDate = Date.now() + accessTokenResponse.data.expires_in * 1000
     req.session.tokenType = accessTokenResponse.data.token_type
+
+    if (accessTokenResponse.data.id_token !== undefined) {
+        const decodedIdToken: TokenBasicPayload = await jwtVerify(accessTokenResponse.data.id_token, AUTH_SERVER_PUBLIC_KEY, {
+            issuer: 'auth-server',
+            audience: clientId,
+            algorithms: ['RS256']
+        })
+        req.session.userId = decodedIdToken.sub
+        req.session.idTokenExpirationDate = Date.now() + decodedIdToken.exp * 1000
+    }
 }
 
 /**
@@ -206,45 +242,90 @@ app.get(AUTH_CALLBACK_ROUTE, catchAsyncErrors(async (req: Request, res: Response
         })
 ));
 
-/**
- * get the user data
- */
-app.get(USER_DATA_ROUTE, hasAuthorization, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) => {
-    const renewToken = async () => {
-        const refreshTokenExchangeBody: RefreshTokenExchangeBody = {
-            client_id: clientId,
-            refresh_token: req.session.refreshToken!,
-            client_secret: clientSecret,
-            grant_type: 'refresh_token'
-        }
-        await sendTokenExchangeRequest(req, refreshTokenExchangeBody)
+async function renewToken(req: Request) {
+    const refreshTokenExchangeBody: RefreshTokenExchangeBody = {
+        client_id: clientId,
+        refresh_token: req.session.refreshToken!,
+        client_secret: clientSecret,
+        grant_type: 'refresh_token'
     }
-    const getUserData = async () => await axios.get(`${RESOURCE_SERVER_ENDPOINT}/user`, {
-        headers: {
-            'Authorization': `Bearer ${req.session.accessToken}`
-        }
-    })
+    await sendTokenExchangeRequest(req, refreshTokenExchangeBody)
+}
 
-    if (Date.now() >= req.session.tokenExpirationDate!)
-        await renewToken()
-
-    let userRes
+/**
+ * send an axios request and returns its response if the status is not 401. otherwise, returns the result
+ * of fallback
+ * @param request 
+ * @param fallback the function to be called in case of 401
+ * @returns 
+ */
+async function sendRequestWithFallbackIf401(request: () => Promise<any>, fallback: () => Promise<any>) {
     try {
-        userRes = await getUserData()
+        return await request()
     }
     catch (err) {
         if (err instanceof AxiosError && err.response?.status === 401) {
-            await renewToken()
-            userRes = await getUserData()
+            return await fallback()
         }
         else
             throw err
     }
+}
+
+/**
+ * get the user data using the access token
+ */
+app.get(USER_DATA_ROUTE, checkAccessToken, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) => {
+    const userDataRequest = async () => await axios.get(`${RESOURCE_SERVER_ENDPOINT}/user`, {
+        headers: {
+            'Authorization': `Bearer ${req.session.accessToken}`
+        }
+    })
+    const userRes = await sendRequestWithFallbackIf401(userDataRequest, async () => {
+        await renewToken(req)
+        return await sendRequestWithFallbackIf401(userDataRequest, () => {
+            resetSession(req.session)
+            return Promise.resolve(null)
+        })
+    })
+
+    if (userRes === null) {
+        res.redirect(HOME_ROUTE)
+        return
+    }
     const userData = userRes.data
 
     res.render('user_data_viewer', {
-        userData: JSON.stringify(userData, null, 4)
+        userData: JSON.stringify(userData, null, 4),
+        userInfoRoute: USER_INFO_ROUTE,
+        userId: req.session.idTokenExpirationDate && Date.now() >= req.session.idTokenExpirationDate ? undefined : req.session.userId
     });
+}));
+
+/**
+ * get the user info using the access token. it queries the endpoint available thanks to the OpenID Connect
+ */
+app.get(USER_INFO_ROUTE, checkAccessToken, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) => {
+    const userInfoRequest = async () => await axios.get(`${RESOURCE_SERVER_ENDPOINT}/userinfo`, {
+        headers: {
+            'Authorization': `Bearer ${req.session.accessToken}`
+        }
+    })
+    const userRes = await sendRequestWithFallbackIf401(userInfoRequest, async () => {
+        await renewToken(req)
+        return await sendRequestWithFallbackIf401(userInfoRequest, () => {
+            resetSession(req.session)
+            return Promise.resolve(null)
+        })
+    })
+
+    if (userRes === null) {
+        res.status(401).end()
+        return
+    }
+    const userInfo: UserInfoResponse = userRes.data
+
+    res.json(userInfo);
 }));
 
 // *********************** error handling

@@ -1,5 +1,54 @@
 <header class="mdl-layout__header">
     <div class="mdl-layout__header-row">
-        <span class="mdl-layout-title">My test application</span>
+        <span class="mdl-layout-title" onclick="window.location.href='/'">My test application</span>
+        <div class="mdl-layout-spacer"></div>
+        <% if (userId) { %>
+        <span class="mdl-layout-title" style="padding-right: 10%;">User Id: <%= userId %></span>
+        <button class="mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect" id="btn-show-user-info"
+            onclick="showUserInfo()">
+            Get User Info
+        </button>
+        <div id="snackbar-invalid-userinfo" class="mdl-snackbar mdl-js-snackbar">
+            <div class="mdl-snackbar__text"></div>
+            <button type="button" class="mdl-snackbar__action"></button>
+        </div>
+        <dialog id="dlg-show-user-info" class="mdl-dialog">
+            <h3 class="mdl-dialog__title">User Info</h3>
+            <div class="mdl-dialog__content">
+                <h4 id="dlg-email"></h4>
+                <h4 id="dlg-username"></h4>
+            </div>
+            <div class="mdl-dialog__actions">
+                <button type="button" class="mdl-button" onclick="closeUserInfoDialog()">Close</button>
+            </div>
+        </dialog>
+        <script>
+            const btnShowUserInfo = document.getElementById('btn-show-user-info');
+            const dlgUserInfo = document.getElementById('dlg-show-user-info');
+            if (!dlgUserInfo.showModal) {
+                dialogPolyfill.registerDialog(dlgUserInfo);
+            }
+
+            async function showUserInfo() {
+                const response = await fetch(`${window.location.origin}<%- userInfoRoute %>`)
+                if (response.status !== 200) {
+                    let snackbarInvalidUserInfo = document.getElementById('snackbar-invalid-userinfo');
+                    const snackBarData = { message: 'Cannot retrieve user info' };
+                    snackbarInvalidUserInfo.MaterialSnackbar.showSnackbar(snackBarData);
+                }
+                else {
+                    const userInfo = await response.json()
+                    document.getElementById('dlg-email').textContent = `Email: ${userInfo.email}`
+                    document.getElementById('dlg-username').textContent = `Username: ${userInfo.username}`
+
+                    dlgUserInfo.showModal()
+                }
+            }
+
+            function closeUserInfoDialog() {
+                dlgUserInfo.close()
+            }
+        </script>
+        <% } %>
     </div>
 </header>
