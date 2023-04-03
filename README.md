@@ -78,3 +78,11 @@ For the external services requirements (like Redis and MongoDB), there is a `doc
 The first step is to start the external services like Redis and MongoDB instances (with `./docker/start.sh` if you are using docker). 
 
 Then you can run the authorization server, the client, and the resource server with `npm run auth_server`, `npm run client`, and `npm run resource_server` respectively. **Note**: always make sure that the authorization server is already listening when you start the client. The reason is that the client immediately registers to the authorization server.
+
+### Debug Mode
+In order to disable PKCE, for Postman testing for example, run the project in debug mode. To enable it, set the `NODE_ENV` to debug for the authorization server and client:
+
+```
+NODE_ENV=debug npm run auth_server
+NODE_ENV=debug npm run client
+```

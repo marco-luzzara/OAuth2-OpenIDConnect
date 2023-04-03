@@ -24,7 +24,7 @@ main() {
     done
     docker-compose up --detach
 
-    sleep 30
+    sleep 40
 
     docker cp auth_server/db_seed.js auth_server_db:/home/db_seed.js
     docker exec -it auth_server_db \

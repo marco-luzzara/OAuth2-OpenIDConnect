@@ -181,7 +181,8 @@ app.get(START_OAUTH_ROUTE, catchAsyncErrors(async (req: Request, res: Response, 
             resetSession(req.session)
             req.session.oauthState = encodeOAuthStateParam(`${baseUrl}${req.query.callbackRoute}`)
             req.session.codeVerifier = generateCodeVerifier(64)
-            const codeChallenge = generateCodeChallenge(req.session.codeVerifier)
+            const codeChallenge = process.env.NODE_ENV === 'debug' ?
+                req.session.codeVerifier : generateCodeChallenge(req.session.codeVerifier)
 
             const oauthQueryParams: OAuthRequestQueryParams = {
                 client_id: clientId,

@@ -280,7 +280,9 @@ function verifyCodeChallenge(challengeMethod: string, codeChallenge: string, cod
     if (challengeMethod !== 'S256')
         throw new OAuthAccessTokenExchangeFailedRequest(400, 'invalid_request', 'the only allowed code_challenge_method is S256')
 
-    if (generateCodeChallenge(codeVerifier) !== codeChallenge)
+    const generatedChallenge = process.env.NODE_ENV === 'debug' ?
+        codeVerifier : generateCodeChallenge(codeVerifier)
+    if (generatedChallenge !== codeChallenge)
         throw new OAuthAccessTokenExchangeFailedRequest(400, 'invalid_request', 'the code_verifier is not correct')
 }
 
