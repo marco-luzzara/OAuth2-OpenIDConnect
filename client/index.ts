@@ -1,7 +1,7 @@
 import express, { Express, Request, Response, NextFunction } from 'express';
 import axios, { AxiosError, AxiosResponse } from 'axios';
 import { useLogger } from '../common/utils/loggingUtils';
-import dirName, { getEnvOrExit } from '../common/utils/envUtils';
+import dirName, { getEnvOrExit, ClientInfo } from '../common/utils/envUtils';
 import cookieParser from 'cookie-parser';
 import path from 'path';
 import { asyncExitHook } from 'exit-hook';
@@ -42,6 +42,7 @@ const SESSION_MAX_AGE = parseInt(getEnvOrExit('SESSION_MAX_AGE'))
 const SESSION_STORAGE_CONNECTION_STRING = getEnvOrExit('SESSION_STORAGE_CONNECTION_STRING')
 const SESSION_SECRET = getEnvOrExit('SESSION_SECRET')
 const AUTH_SERVER_PUBLIC_KEY = getEnvOrExit('AUTH_SERVER_PUBLIC_KEY')
+const clientInfo = new ClientInfo('./dist/client/client_data.txt')
 
 // *********************** promisified functions
 const jwtVerify = promisify<string, Secret, VerifyOptions, any>(jwt.verify)
@@ -104,16 +105,12 @@ const USER_INFO_ROUTE = '/user_info'
 
 // *********************** client registration
 const redirectUri = `${baseUrl}${AUTH_CALLBACK_ROUTE}`
-let clientId: string
-let clientSecret: string
 try {
     const response = await axios.post(`${AUTH_SERVER_ENDPOINT}/client`, {
         applicationName: 'my-client',
         redirectUrls: [redirectUri]
     })
-    clientId = response.data.clientId
-    clientSecret = response.data.clientSecret
-    console.log("ClientId: ", clientId)
+    console.log("ClientId: ", response.data.clientId)
 }
 catch (err) {
     process.exit(1)
@@ -185,7 +182,7 @@ app.get(START_OAUTH_ROUTE, catchAsyncErrors(async (req: Request, res: Response, 
                 req.session.codeVerifier : generateCodeChallenge(req.session.codeVerifier)
 
             const oauthQueryParams: OAuthRequestQueryParams = {
-                client_id: clientId,
+                client_id: await clientInfo.clientId,
                 redirect_uri: redirectUri,
                 response_type: 'code',
                 scope: req.query.scope,
@@ -210,7 +207,7 @@ async function sendTokenExchangeRequest(req: Request, body: AccessTokenExchangeB
     if (accessTokenResponse.data.id_token !== undefined) {
         const decodedIdToken: TokenBasicPayload = await jwtVerify(accessTokenResponse.data.id_token, AUTH_SERVER_PUBLIC_KEY, {
             issuer: 'auth-server',
-            audience: clientId,
+            audience: await clientInfo.clientId,
             algorithms: ['RS256']
         })
         req.session.userId = decodedIdToken.sub
@@ -230,10 +227,10 @@ app.get(AUTH_CALLBACK_ROUTE, catchAsyncErrors(async (req: Request, res: Response
             const callbackUri = decodeOAuthStateParam(req.query.state)
 
             const accessTokenExchangeBody: AccessTokenExchangeBody = {
-                client_id: clientId,
+                client_id: await clientInfo.clientId,
                 redirect_uri: redirectUri,
                 code: req.query.code,
-                client_secret: clientSecret,
+                client_secret: await clientInfo.clientSecret,
                 grant_type: 'authorization_code',
                 code_verifier: req.session.codeVerifier!
             }
@@ -245,9 +242,9 @@ app.get(AUTH_CALLBACK_ROUTE, catchAsyncErrors(async (req: Request, res: Response
 
 async function renewToken(req: Request) {
     const refreshTokenExchangeBody: RefreshTokenExchangeBody = {
-        client_id: clientId,
+        client_id: await clientInfo.clientId,
         refresh_token: req.session.refreshToken!,
-        client_secret: clientSecret,
+        client_secret: await clientInfo.clientSecret,
         grant_type: 'refresh_token'
     }
     await sendTokenExchangeRequest(req, refreshTokenExchangeBody)

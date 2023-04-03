@@ -6,7 +6,7 @@ import { User } from './model/db/User';
 import { Client } from './model/db/Client';
 import { generateCodeChallenge, generateRandomHexString, generateUrlWithQueryParams, generateUUIDv1 } from '../common/utils/generationUtils';
 import { catchAsyncErrors } from '../common/utils/errorHandlingUtils';
-import { buildClientRegistrationResponse, ClientRegistrationBody } from './model/routes/registration';
+import { ClientRegistrationBody, ClientRegistrationResponse } from './model/routes/registration';
 import { useLogger } from '../common/utils/loggingUtils';
 import cookieParser from 'cookie-parser'
 import RedisStore from "connect-redis"
@@ -16,7 +16,7 @@ import { ClientLoginBody, ClientLoginQueryParams } from './model/routes/login';
 import argon2 from "argon2";
 import { AuthCodeAlreadyUsed, OAuthAccessTokenExchangeFailedRequest, UnregisteredApplication, UserNotAuthenticatedError, WrongCredentialsError, WrongRedirectUri } from './model/errors'
 import { promisify } from 'util';
-import dirName, { getEnvOrExit } from '../common/utils/envUtils';
+import dirName, { ClientInfo, getEnvOrExit } from '../common/utils/envUtils';
 import path from 'path'
 import { AuthQueryParamsWithUserChoiceTypeCheck, ClientAuthorizationQueryParamsTypeCheck, OAuthCodeFailedRequest, ValidatedAuthRequestParams } from './model/routes/authorization';
 import { LogoutQueryParams } from './model/routes/logout';
@@ -57,6 +57,7 @@ const MAX_AUTH_CODE_LIFETIME = parseInt(getEnvOrExit('MAX_AUTH_CODE_LIFETIME'))
 const MAX_ACCESS_TOKEN_LIFETIME = parseInt(getEnvOrExit('MAX_ACCESS_TOKEN_LIFETIME'))
 const MAX_REFRESH_TOKEN_LIFETIME = parseInt(getEnvOrExit('MAX_REFRESH_TOKEN_LIFETIME'))
 const MAX_ID_TOKEN_LIFETIME = parseInt(getEnvOrExit('MAX_ID_TOKEN_LIFETIME'))
+const clientInfo = new ClientInfo('./dist/client/client_data.txt')
 
 // *********************** mongo setup
 const mongoClient = new MongoClient(DB_CONNECTION_STRING);
@@ -144,7 +145,12 @@ app.post(CLIENT_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next
             if (!insertResult.acknowledged)
                 throw new Error('Could not add the new client to the database')
 
-            res.status(201).json(buildClientRegistrationResponse(newClient));
+            await clientInfo.writeClientInfo(newClient.clientId, newClient.clientSecret)
+            const registrationResponse: ClientRegistrationResponse = {
+                clientId: newClient.clientId,
+                clientSecret: newClient.clientSecret
+            }
+            res.status(201).json(registrationResponse);
         })
 ))
 

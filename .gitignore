@@ -1,6 +1,7 @@
 # custom
 dist/
 *.secret
+client/client_data.txt
 
 # Logs
 logs
