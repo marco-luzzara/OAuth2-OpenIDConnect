@@ -2,11 +2,15 @@
     <div class="mdl-layout__header-row">
         <span class="mdl-layout-title" onclick="window.location.href='/'">My test application</span>
         <div class="mdl-layout-spacer"></div>
-        <% if (userId) { %>
+        <% if (userId || userData) { %>
         <span class="mdl-layout-title" style="padding-right: 10%;">User Id: <%= userId %></span>
         <button class="mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect" id="btn-show-user-info"
-            onclick="showUserInfo()">
+            style="padding-right: 10%;" onclick="showUserInfo()">
             Get User Info
+        </button>
+        <button class="mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect" id="btn-reset"
+            onclick="reset()">
+            Reset
         </button>
         <div id="snackbar-invalid-userinfo" class="mdl-snackbar mdl-js-snackbar">
             <div class="mdl-snackbar__text"></div>
@@ -47,6 +51,10 @@
 
             function closeUserInfoDialog() {
                 dlgUserInfo.close()
+            }
+
+            function reset() {
+                window.location.href = `${window.location.origin}<%- resetRoute %>`
             }
         </script>
         <% } %>

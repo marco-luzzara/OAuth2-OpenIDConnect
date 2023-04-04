@@ -102,6 +102,7 @@ const START_OAUTH_ROUTE = '/start_oauth'
 const AUTH_CALLBACK_ROUTE = '/auth_callback'
 const USER_DATA_ROUTE = '/user_data'
 const USER_INFO_ROUTE = '/user_info'
+const RESET_ROUTE = '/reset'
 
 // *********************** client registration
 const redirectUri = `${baseUrl}${AUTH_CALLBACK_ROUTE}`
@@ -158,6 +159,7 @@ app.get(HOME_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next: N
         startOAuthRoute: START_OAUTH_ROUTE,
         callbackRoute: USER_DATA_ROUTE,
         userInfoRoute: USER_INFO_ROUTE,
+        resetRoute: req.session.accessToken ?? RESET_ROUTE,
         userId: req.session.idTokenExpirationDate && Date.now() >= req.session.idTokenExpirationDate ? undefined : req.session.userId
     });
 }));
@@ -296,6 +298,7 @@ app.get(USER_DATA_ROUTE, checkAccessToken, catchAsyncErrors(async (req: Request,
     res.render('user_data_viewer', {
         userData: JSON.stringify(userData, null, 4),
         userInfoRoute: USER_INFO_ROUTE,
+        resetRoute: req.session.accessToken ?? RESET_ROUTE,
         userId: req.session.idTokenExpirationDate && Date.now() >= req.session.idTokenExpirationDate ? undefined : req.session.userId
     });
 }));
@@ -325,6 +328,17 @@ app.get(USER_INFO_ROUTE, checkAccessToken, catchAsyncErrors(async (req: Request,
 
     res.json(userInfo);
 }));
+
+/**
+ * reset the all the tokens
+ */
+app.get(RESET_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) => {
+    resetSession(req.session)
+    await promisify(req.session.save).call(req.session)
+    await promisify(req.session.regenerate).call(req.session)
+
+    res.redirect(`${baseUrl}${HOME_ROUTE}`)
+}))
 
 // *********************** error handling
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
