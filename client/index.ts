@@ -159,7 +159,8 @@ app.get(HOME_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next: N
         startOAuthRoute: START_OAUTH_ROUTE,
         callbackRoute: USER_DATA_ROUTE,
         userInfoRoute: USER_INFO_ROUTE,
-        resetRoute: req.session.accessToken ?? RESET_ROUTE,
+        resetRoute: RESET_ROUTE,
+        userData: undefined,
         userId: req.session.idTokenExpirationDate && Date.now() >= req.session.idTokenExpirationDate ? undefined : req.session.userId
     });
 }));
@@ -298,7 +299,7 @@ app.get(USER_DATA_ROUTE, checkAccessToken, catchAsyncErrors(async (req: Request,
     res.render('user_data_viewer', {
         userData: JSON.stringify(userData, null, 4),
         userInfoRoute: USER_INFO_ROUTE,
-        resetRoute: req.session.accessToken ?? RESET_ROUTE,
+        resetRoute: RESET_ROUTE,
         userId: req.session.idTokenExpirationDate && Date.now() >= req.session.idTokenExpirationDate ? undefined : req.session.userId
     });
 }));

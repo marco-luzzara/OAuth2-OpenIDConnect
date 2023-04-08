@@ -1,11 +1,21 @@
 <header class="mdl-layout__header">
+    <style>
+        #btn-reset,
+        #btn-show-user-info {
+            background-color: aliceblue;
+        }
+
+        #app-title:hover {
+            cursor: pointer;
+        }
+    </style>
     <div class="mdl-layout__header-row">
-        <span class="mdl-layout-title" onclick="window.location.href='/'">My test application</span>
+        <span class="mdl-layout-title" id="app-title" onclick="window.location.href='/'">My test application</span>
         <div class="mdl-layout-spacer"></div>
         <% if (userId || userData) { %>
         <span class="mdl-layout-title" style="padding-right: 10%;">User Id: <%= userId %></span>
         <button class="mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect" id="btn-show-user-info"
-            style="padding-right: 10%;" onclick="showUserInfo()">
+            onclick="showUserInfo()">
             Get User Info
         </button>
         <button class="mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect" id="btn-reset"
