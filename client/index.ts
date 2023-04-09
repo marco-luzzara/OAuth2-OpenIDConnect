@@ -130,6 +130,21 @@ async function checkAccessToken(req: Request, res: Response, next: NextFunction)
 
 // *********************** routes
 /**
+ * the client header.ejs requires the userId and the authorization presence of the client. these fields
+ * are used to decide whether to show the buttons for reset and OpenIDConnect user info endpoint.
+ * @param req 
+ * @param renderInfo 
+ * @returns the initial object + the variables for the header evaluation
+ */
+function completeRenderingWithAuthInfo(req: Request, renderInfo: any) {
+    return {
+        ...renderInfo,
+        hasAuthorization: req.session.accessToken !== undefined,
+        userId: req.session.idTokenExpirationDate && Date.now() >= req.session.idTokenExpirationDate ? undefined : req.session.userId
+    }
+}
+
+/**
  * create a base64 string that concatenates a random nonce and the base-64 encoded url to redirect the user
  * @param afterAuthUrl the callback url to redirect the client after the auth flow completes
  * @returns a base64 string
@@ -154,15 +169,13 @@ function decodeOAuthStateParam(state: string): string {
 app.get(HOME_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) => {
     const scopesResponse = await axios.get(`${AUTH_SERVER_ENDPOINT}/scopes`)
 
-    res.render('home', {
+    res.render('home', completeRenderingWithAuthInfo(req, {
         scopes: scopesResponse.data,
         startOAuthRoute: START_OAUTH_ROUTE,
         callbackRoute: USER_DATA_ROUTE,
         userInfoRoute: USER_INFO_ROUTE,
-        resetRoute: RESET_ROUTE,
-        userData: undefined,
-        userId: req.session.idTokenExpirationDate && Date.now() >= req.session.idTokenExpirationDate ? undefined : req.session.userId
-    });
+        resetRoute: RESET_ROUTE
+    }));
 }));
 
 function generateCodeVerifier(length: number): string {
@@ -296,12 +309,11 @@ app.get(USER_DATA_ROUTE, checkAccessToken, catchAsyncErrors(async (req: Request,
     }
     const userData = userRes.data
 
-    res.render('user_data_viewer', {
+    res.render('user_data_viewer', completeRenderingWithAuthInfo(req, {
         userData: JSON.stringify(userData, null, 4),
         userInfoRoute: USER_INFO_ROUTE,
-        resetRoute: RESET_ROUTE,
-        userId: req.session.idTokenExpirationDate && Date.now() >= req.session.idTokenExpirationDate ? undefined : req.session.userId
-    });
+        resetRoute: RESET_ROUTE
+    }));
 }));
 
 /**
