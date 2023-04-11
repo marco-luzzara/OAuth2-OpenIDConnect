@@ -30,6 +30,7 @@ import { UserRepoMongo } from './repositories/UserRepo';
 import { ScopeRepoMongo } from './repositories/ScopeRepo';
 import { ValidationError } from '../common/CustomErrors';
 import { OAuthRequestQueryParams } from '../common/types/oauth_types'
+import { UserClientInfoBody } from './model/routes/user_clients';
 
 // *********************** express setup
 const app: Express = express();
@@ -111,6 +112,8 @@ app.use(session(sessionConfig))
 const LOGIN_ROUTE = '/login'
 const LOGOUT_ROUTE = '/logout'
 const CLIENT_ROUTE = '/client'
+const USER_ROUTE = '/user'
+const REVOKE_CLIENT_ROUTE = '/user/revocation'
 const SCOPES_ROUTE = '/scopes'
 const AUTHORIZE_ROUTE = '/oauth/authorize'
 const AUTH_DIALOG_ROUTE = '/oauth/auth_dialog'
@@ -151,6 +154,46 @@ app.post(CLIENT_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next
                 clientSecret: newClient.clientSecret
             }
             res.status(201).json(registrationResponse);
+        })
+))
+
+/**
+ * get the user dashboard from which he can revoke a client
+ */
+app.get(USER_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) => {
+    if (!req.session.username) {
+        const callback = generateUrlWithQueryParams(`${baseUrl}${USER_ROUTE}`, req.query)
+
+        res.render('login', {
+            callback,
+            loginRoute: LOGIN_ROUTE
+        })
+    }
+    else {
+        const userInfo = await userRepo.getUserBySubject(req.session.subject)
+        if (userInfo === null)
+            throw new Error('No user found with the specified subject')
+
+        res.render('user_dashboard', {
+            clientsAllowed: userInfo.clientsAllowed,
+            revokeRoute: REVOKE_CLIENT_ROUTE
+        })
+    }
+}))
+
+/**
+ * revoke or re-enable a client for a specific user
+ */
+app.put(REVOKE_CLIENT_ROUTE, isAuthenticated, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) =>
+    await validateBody(req, res, next, UserClientInfoBody,
+        async (req, res: Response, next: NextFunction) => {
+            const updateResult = await userRepo.setRevokeClientIdByUser(
+                req.session.subject, req.body.clientId, req.body.isRevoked)
+
+            if (!updateResult.acknowledged || updateResult.matchedCount === 0)
+                throw new Error('Could not revoke/enable a client for user')
+
+            res.status(204)
         })
 ))
 
