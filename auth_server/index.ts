@@ -193,7 +193,7 @@ app.put(REVOKE_CLIENT_ROUTE, isAuthenticated, catchAsyncErrors(async (req: Reque
             if (!updateResult.acknowledged || updateResult.matchedCount === 0)
                 throw new Error('Could not revoke/enable a client for user')
 
-            res.status(204)
+            res.status(204).end();
         })
 ))
 

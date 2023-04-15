@@ -77,7 +77,7 @@
                     }`,
             });
 
-            if (response.status !== 200) {
+            if (response.status !== 204) {
                 const errorMessage = await response.text()
                 let snackbarCannotChangeRevocation = document.getElementById('sbar-cannot-change-revocation');
                 const snackBarData = { message: errorMessage };
