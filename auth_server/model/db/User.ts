@@ -1,6 +1,6 @@
 export interface ClientInfo {
     clientId: string,
-    clientName: string,
+    applicationName: string,
     isRevoked: boolean
 }
 

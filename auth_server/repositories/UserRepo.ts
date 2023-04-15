@@ -1,9 +1,22 @@
 import { Collection, MongoClient } from "mongodb";
 import { User } from "../model/db/User";
 
+export type IsClientIdRevokedResponse = Promise<{
+    ok: true,
+    response: boolean
+} | {
+    ok: false,
+    response: null
+}>
+
 export interface UserRepo {
     getByUsernameAndPassword(username: string, password: string): any
-    addClientId(subject: string, clientId: string, clientName: string): any
+    /**
+     * upsert the client info among the authorized clients of the user. insert the new client or
+     * update isRevoke = false if the client already exists
+     */
+    authorizeClientId(subject: string, clientId: string, applicationName: string): Promise<boolean>
+    isClientIdRevoked(subject: string, clientId: string): IsClientIdRevokedResponse
     getUserBySubject(subject: string): any
     setRevokeClientIdByUser(subject: string, clientId: string, isRevoked: boolean): any
 }
@@ -20,19 +33,62 @@ export class UserRepoMongo implements UserRepo {
         })
     }
 
-    async addClientId(subject: string, clientId: string, clientName: string) {
-        return await this.usersCollection.updateOne({
+    async authorizeClientId(subject: string, clientId: string, applicationName: string): Promise<boolean> {
+        const updateResult = await this.usersCollection.updateOne({
             subject
         },
-            {
-                '$push': {
-                    'clientsAllowed': {
-                        'clientId': clientId,
-                        'clientName': clientName,
-                        'isRevoked': false
+            [
+                {
+                    '$set': {
+                        'clientsAllowed': {
+                            '$filter': {
+                                'input': "$clientsAllowed",
+                                'as': "client",
+                                'cond': {
+                                    '$ne': [
+                                        "$$client.clientId",
+                                        clientId
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                },
+                {
+                    '$set': {
+                        'clientsAllowed': {
+                            '$concatArrays': [
+                                '$clientsAllowed',
+                                [
+                                    {
+                                        'clientId': clientId,
+                                        'applicationName': applicationName,
+                                        'isRevoked': false
+                                    }
+                                ]
+                            ]
+                        }
                     }
                 }
+            ])
+
+        return updateResult.acknowledged && updateResult.modifiedCount === 1
+    }
+
+    async isClientIdRevoked(subject: string, clientId: string): IsClientIdRevokedResponse {
+        const findResult = await this.usersCollection.findOne({
+            subject, 'clientsAllowed.clientId': clientId
+        },
+            {
+                'projection': {
+                    'clientsAllowed.$': 1
+                }
             })
+
+        if (findResult === null)
+            return { ok: false, response: null }
+
+        return { ok: true, response: findResult.clientsAllowed[0].isRevoked }
     }
 
     async getUserBySubject(subject: string) {

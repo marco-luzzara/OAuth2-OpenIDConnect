@@ -42,7 +42,7 @@
                             <hr />
                             <% for (let clientAllowed of clientsAllowed) { %>
                             <li class="mdl-list__item">
-                                <div class="mdl-list__item-primary-content"><%= clientAllowed.clientName %></div>
+                                <div class="mdl-list__item-primary-content"><%= clientAllowed.applicationName %></div>
                                 <div class="mdl-list__item-secondary-content">
                                     <label class="mdl-switch mdl-js-switch mdl-js-ripple-effect" for="switch-revoked">
                                         <input data-client-id="<%- clientAllowed.clientId %>"
@@ -65,14 +65,14 @@
             const clientId = chkBox.dataset.clientId
             const isRevoked = chkBox.checked
 
-            const response = await fetch('<%- revokeRoute %>', {
+            const response = await fetch(`${window.location.origin}<%- revokeRoute %>`, {
                 method: 'PUT',
                 headers: {
                     "Content-Type": "application/json"
                 },
                 body: `
                     {
-                        "clientId": ${clientId},
+                        "clientId": "${clientId}",
                         "isRevoked": ${isRevoked}
                     }`,
             });

@@ -287,7 +287,7 @@ app.get(AUTH_DIALOG_ROUTE, isAuthenticated, catchAsyncErrors(async (req: Request
 app.get(AUTHORIZATION_ROUTE, isAuthenticated, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) =>
     await validateQueryParams(req, res, next, AuthQueryParamsWithUserChoiceTypeCheck,
         // TODO: instead of a ValidationError I should technically redirect to redirect_uri with an
-        // invalid_request error. However, I should first validate the redirect_uri is present and valid. 
+        // invalid_request error. However, I should first make sure the redirect_uri is present and valid. 
         async (req, res: Response, next: NextFunction) => {
             if (req.query.user_choice === 'deny') {
                 res.redirect(new OAuthCodeFailedRequest(req.query.redirect_uri,
@@ -301,12 +301,18 @@ app.get(AUTHORIZATION_ROUTE, isAuthenticated, catchAsyncErrors(async (req: Reque
                 return
             }
 
+            // update the user's list of allowed clients with an upsert
+            const authorizeUpdateSuccess = await userRepo.authorizeClientId(req.session.subject, authValidationResult.client_id,
+                authValidationResult.applicationName)
+            if (!authorizeUpdateSuccess)
+                throw new Error(`could not add ${authValidationResult.applicationName} to user ${req.session.username} application list`)
+
             const authCodePayload: AuthCodePayload = {
-                client_id: req.query.client_id,
-                redirect_uri: req.query.redirect_uri,
+                client_id: authValidationResult.client_id,
+                redirect_uri: authValidationResult.redirect_uri,
                 scope: req.query.scope,
-                code_challenge: req.query.code_challenge,
-                code_challenge_method: req.query.code_challenge_method
+                code_challenge: authValidationResult.code_challenge,
+                code_challenge_method: authValidationResult.code_challenge_method
             }
             const authCode = await jwtSign(authCodePayload, PRIVATE_KEY, {
                 algorithm: 'RS256',
@@ -319,7 +325,7 @@ app.get(AUTHORIZATION_ROUTE, isAuthenticated, catchAsyncErrors(async (req: Reque
 
             const redirectionQueryParam: OAuthRedirectionQueryParams = {
                 code: authCode,
-                state: req.query.state
+                state: authValidationResult.state
             }
             res.redirect(generateUrlWithQueryParams(req.query.redirect_uri, redirectionQueryParam))
         })
@@ -394,6 +400,13 @@ app.post(ACCESS_TOKEN_ROUTE, catchAsyncErrors(async (req: Request, res: Response
 
                 if (decodedRefreshToken.client_id !== req.body.client_id)
                     throw new OAuthAccessTokenExchangeFailedRequest(400, 'invalid_request', 'the specified client_id does not correspond to the one associated to the code')
+
+                // check the authorization has not been revoked
+                const revocationCheck = await userRepo.isClientIdRevoked(req.session.subject, req.body.client_id)
+                if (!revocationCheck.ok)
+                    throw new Error(`the client id ${req.body.client_id} is not registered for user ${req.session.username}`)
+                if (revocationCheck.response)
+                    throw new OAuthAccessTokenExchangeFailedRequest(401, 'unauthorized_client', 'the client id has been revoked')
 
                 if (client.clientSecret !== req.body.client_secret)
                     throw new OAuthAccessTokenExchangeFailedRequest(401, 'invalid_client', 'client_secret is wrong')
