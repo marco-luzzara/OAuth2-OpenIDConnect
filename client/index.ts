@@ -157,6 +157,7 @@ function encodeOAuthStateParam(afterAuthUrl: string): string {
 /**
  * decode the state param to retrieve the redirect url
  * @param state the state got from the url
+ * @returns the encoded url
  */
 function decodeOAuthStateParam(state: string): string {
     const encodedUrl = state.substring(24) // skip 24 = 16 bytes in base64 for the nonce

@@ -72,7 +72,9 @@ export class UserRepoMongo implements UserRepo {
                 }
             ])
 
-        return updateResult.acknowledged && updateResult.modifiedCount === 1
+		// cannot check on the modified count because the document is not modified if
+		// it remains the same. This happens when I authorize the same client twice
+        return updateResult.acknowledged // && updateResult.modifiedCount === 1
     }
 
     async isClientIdRevoked(subject: string, clientId: string): IsClientIdRevokedResponse {
