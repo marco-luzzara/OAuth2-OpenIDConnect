@@ -1,0 +1,31 @@
+.centered-grid {
+    justify-content: flex-start;
+    align-content: center;
+    /* grid-auto-flow: column; */
+    align-items: center;
+    justify-items: center;
+}
+
+.centered-flex {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    align-content: center;
+}
+
+.centered-arrow {
+    min-width: 50%;
+    text-align: center;
+}
+
+#slide-content {
+    overflow: scroll;
+}
+
+ol {
+    list-style: revert;
+}
+
+.slidev-vclick-prior {
+    opacity: 50%;
+}
