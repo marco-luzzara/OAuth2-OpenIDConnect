@@ -29,3 +29,7 @@ ol {
 .slidev-vclick-prior {
     opacity: 50%;
 }
+
+.message-body {
+    margin-top: 13%;
+}

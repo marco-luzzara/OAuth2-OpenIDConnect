@@ -32,7 +32,7 @@ css: unocss
 
   <EntityLane title="Client" />
 
-  <div class="grid grid-rows-2 grid-cols-1 centered-grid" style="border-top: 10%">
+  <div class="grid grid-rows-2 grid-cols-1 centered-grid message-body">
 
   <Message direction="right" v-click="1">
 
@@ -77,15 +77,21 @@ layout: iframe-right
 url: http://localhost:2346/
 ---
 
-# The Client Starts the Code Flow
+# The User Starts the Code Flow
 
 <div class="grid grid-rows-3 grid-cols-1 centered-grid">
 
+  <div>
+
+  **GET**
+
   ```
-  GET http://client.com/start_oauth?
+  http://client.com/start_oauth?
       callbackRoute=/user_data&
       scope=openid+contacts.read+profile.read
   ```
+
+  </div>
 
   <material-symbols-arrow-circle-down-rounded class="text-5xl" />
 
@@ -100,4 +106,93 @@ url: http://localhost:2346/
 
 ---
 
+# Authorize Request
+
+<div class="grid grid-rows-1 grid-cols-3 centered-grid">
+
+  <EntityLane title="User Browser" />
+
+  <div class="grid grid-rows-2 grid-cols-1 centered-grid message-body">
+
+  <Message direction="right" v-click="1">
+
+  <div>
+
+  **GET**
+
+  ```
+  http://auth_server.com/oauth/authorize?
+      client_id=client-id&
+      redirect_uri=http://client.com/auth_callback&
+      response_type=code&
+      scope=openid+contacts.read+profile.read&
+      state=client_state&
+      code_challenge=sha256(generateCodeVerifier(64))&
+      code_challenge_method=S256
+  ```
+
+  </div>
+  </Message>
+
+  <Message direction="left" v-click="2">
+
+  ![Login page](/images/login.png)
+
+  </Message>
+  </div>
+
+  <EntityLane title="Authorization Server" />
+
+</div>
+
+---
+
+# Login Procedure
+
+<div class="grid grid-rows-1 grid-cols-3 centered-grid">
+
+  <EntityLane title="User Browser" />
+
+  <div class="grid grid-rows-2 grid-cols-1 centered-grid message-body">
+
+  <Message direction="right" v-click="1">
+
+  <div>
+
+  **POST** http://auth_server.com/login
+
+  ```json
+  {
+    "username": "user1",
+    "password": "secret"
+  }
+  ```
+
+  </div>
+  </Message>
+
+  <Message direction="left" v-click="2">
+
+  **200 OK**
+
+  </Message>
+
+  <Message direction="right" v-click="3">
+
+  Redirect to /login callback
+
+  </Message>
+  </div>
+
+  <EntityLane title="Authorization Server" />
+
+</div>
+
+---
+
+<!-- <Message direction="left" v-click="2">
+
+  ![Auth dialog page](/images/auth_dialog.png)
+
+  </Message> -->
 
