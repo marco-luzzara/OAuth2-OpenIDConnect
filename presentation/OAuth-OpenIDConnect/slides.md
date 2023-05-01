@@ -97,9 +97,11 @@ url: http://localhost:2346/
 
   <div>
 
-  **302** 
+  **302 Found** 
   
+  ```
   Location: http://auth_server.com/oauth/authorize/...
+  ```
   </div>
 
 </div>
@@ -173,15 +175,10 @@ url: http://localhost:2346/
 
   <Message direction="left" v-click="2">
 
-  **200 OK**
+  **200 OK**/**401 Unauthorized**
 
   </Message>
 
-  <Message direction="right" v-click="3">
-
-  Redirect to /login callback
-
-  </Message>
   </div>
 
   <EntityLane title="Authorization Server" />
@@ -190,9 +187,236 @@ url: http://localhost:2346/
 
 ---
 
-<!-- <Message direction="left" v-click="2">
+# Show Dialog to Allow/Deny User Data access
+
+<div class="grid grid-rows-1 grid-cols-3 centered-grid">
+
+  <EntityLane title="User Browser" />
+
+  <div class="grid grid-rows-2 grid-cols-1 centered-grid message-body">
+
+  <Message direction="right" v-click="1">
+
+  <div>
+
+  **GET**
+
+  ```
+  http://auth_server.com/oauth/auth_dialog?
+      params(/oauth/authorize)
+  ```
+
+  </div>
+  </Message>
+
+  <Message direction="left" v-click="2">
 
   ![Auth dialog page](/images/auth_dialog.png)
 
-  </Message> -->
+  </Message>
+  </div>
 
+  <EntityLane title="Authorization Server" />
+</div>
+
+---
+
+# The User approves the request
+
+<div class="grid grid-rows-1 grid-cols-3 centered-grid">
+
+  <EntityLane title="User Browser" />
+
+  <Message direction="right" v-click="1" class="message-body">
+
+  ![Auth dialog allow](/images/auth_dialog_allow.png)
+
+  **GET**
+
+  ```
+  http://auth_server.com/oauth/authorization?
+      user_choice=allow&
+      params(/oauth/authorize)
+  ```
+
+  </Message>
+
+  <EntityLane title="Authorization Server" />
+</div>
+
+---
+
+# The Authorization code is generated
+
+<div class="grid grid-rows-1 grid-cols-3 centered-grid">
+
+  <EntityLane title="Authorization Server" />
+
+  <Message direction="right" v-click="1" class="message-body">
+
+  **302 Found**
+
+  ```
+  Location: http://client.com/auth_callback?
+    code=authorization_code&
+    state=client_state
+  ```
+
+  </Message>
+
+  <EntityLane title="Client" />
+</div>
+
+---
+
+# Access Token Exchange
+
+<div class="grid grid-rows-1 grid-cols-3 centered-grid">
+
+  <EntityLane title="Client" />
+
+  <div class="grid grid-rows-2 grid-cols-1 centered-grid message-body">
+
+  <Message direction="right" v-click="1">
+
+  <div>
+
+  **POST**
+
+  ```
+  http://auth_server.com/oauth/access_token?
+      code=auth_code&
+      grant_type=authorization_code&
+      redirect_uri=http://client.com/auth_callback&
+      client_id=client-id&
+      client_secret=client-secret&
+      code_verifier=code_verifier
+  ```
+
+  </div>
+  </Message>
+
+  <Message direction="left" v-click="2">
+
+  **200 OK**
+
+  Cache-Control: no-store <br />
+  Pragma: no-cache
+
+  ```json
+  {
+    "token_type": "Bearer",
+    "access_token": "jwt_access_token",
+    "expires_in": 60,
+    "refresh_token": "jwt_refresh_token"
+  }
+  ```  
+
+  </Message>
+  </div>
+
+  <EntityLane title="Authorization Server" />
+</div>
+
+---
+
+# Query User Data with Access Token
+
+<div class="grid grid-rows-1 grid-cols-3 centered-grid">
+
+  <EntityLane title="Client" />
+
+  <div>
+  <div class="message-body">
+
+  ```js
+  const callbackUri = decodeOAuthStateParam(req.query.state)
+  // callbackUri = "http://client.com/user_data"
+  ```
+
+  </div>
+
+  <div v-click="1" id="redirect-message">
+  <Message direction="redirect" style="margin-top: 3%">
+
+  **302 Found**
+
+  ```
+  Location: ${callbackUri}
+  ```
+
+  </Message>
+
+  <mdi-arrow-left-bottom-bold class="text-5xl" />
+  </div>
+  </div>
+</div>
+
+<style>
+  #redirect-message {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+</style>
+
+---
+
+# The Client queries the Resource Server
+
+<div class="grid grid-rows-1 grid-cols-3 centered-grid">
+
+  <EntityLane title="Client" />
+
+  <div class="grid grid-rows-2 grid-cols-1 centered-grid message-body">
+
+  <Message direction="right" v-click="1">
+
+  <div>
+
+  **GET** http://resource_server.com/user
+
+  Authorization: Bearer jwt_access_token
+
+  </div>
+  </Message>
+
+  <Message direction="left" v-click="2">
+
+  **200 OK**
+
+  ```json
+  {
+    "username": "user1",
+    "contacts": ["friend1", "friend2"],
+    "payments": [
+        {
+            "receiver": "bank",
+            "amount": 100
+        }
+    ]
+  }
+  ```  
+
+  </Message>
+  </div>
+
+  <EntityLane title="Resource Server" />
+</div>
+
+---
+
+# The Client returns the formatted User Data
+
+<div class="grid grid-rows-1 grid-cols-3 centered-grid">
+
+  <EntityLane title="Client" />
+
+  <Message direction="right" class="message-body">
+
+  ![User Data](/images/user_data.png)
+
+  </Message>
+
+  <EntityLane title="User Browser" />
+</div>

@@ -24,8 +24,6 @@ main() {
     done
     docker-compose up --detach
 
-    sleep 40
-
     docker cp auth_server/db_seed.js auth_server_db:/home/db_seed.js
     docker exec -it auth_server_db \
         mongosh "mongodb://admin:admin@localhost:27017/demo?authSource=admin" --file /home/db_seed.js

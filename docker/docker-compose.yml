@@ -12,6 +12,12 @@ services:
     environment:
       MONGO_INITDB_ROOT_USERNAME: admin
       MONGO_INITDB_ROOT_PASSWORD_FILE: /run/secrets/auth_server_db_password
+    healthcheck:
+      test: mongosh --eval 'db.runCommand("ping").ok' --quiet
+      interval: 5s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
     secrets:
       - auth_server_db_password
 
@@ -43,6 +49,12 @@ services:
       MONGO_INITDB_ROOT_PASSWORD_FILE: /run/secrets/resource_server_db_password
     secrets:
       - resource_server_db_password
+
+  initialization_done:
+    image: alpine:latest
+    depends_on:
+      auth_server_db:
+        condition: service_healthy
 
 secrets:
   auth_server_db_password:

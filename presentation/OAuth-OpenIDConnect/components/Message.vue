@@ -12,7 +12,6 @@ export default {
             <slot />
         </div>
         <div class="arrow-right" v-if="direction === 'right'"></div>
-        <!-- <ic-baseline-keyboard-arrow-right v-if="direction === 'right'" class="text-5xl" /> -->
     </div>
 </template>
 

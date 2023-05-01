@@ -535,13 +535,13 @@ app.get(LOGOUT_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next:
 // *********************** error handling
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
     switch (err.constructor) {
-        case WrongCredentialsError || UnregisteredApplication:
+        case UnregisteredApplication:
             return res.status(404).send(err.message)
         case WrongRedirectUri:
             return res.status(400).send(err.message)
         case ValidationError:
             return res.status(400).json((err as ValidationError).validationRules)
-        case UserNotAuthenticatedError || jwt.TokenExpiredError || jwt.JsonWebTokenError || AuthCodeAlreadyUsed:
+        case UserNotAuthenticatedError || WrongCredentialsError || jwt.TokenExpiredError || jwt.JsonWebTokenError || AuthCodeAlreadyUsed:
             return res.status(401).send(err.message)
         case OAuthAccessTokenExchangeFailedRequest:
             const accessTokenExchangeError = err as OAuthAccessTokenExchangeFailedRequest
