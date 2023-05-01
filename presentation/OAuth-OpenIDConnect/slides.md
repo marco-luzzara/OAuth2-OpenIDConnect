@@ -15,12 +15,10 @@ drawings:
   persist: false
 # use UnoCSS
 css: unocss
+layout: intro
 ---
 
 # OAuth2 and OpenID Connect
-
-<br />
-<br />
 
 ## NodeJS implementation of the OAuth2 Code flow
 
@@ -420,3 +418,91 @@ url: http://localhost:2346/
 
   <EntityLane title="User Browser" />
 </div>
+
+---
+layout: cover
+---
+
+# Implementation Details
+
+---
+
+# Environment
+
+| Service | Dependencies |
+| ------- | ------------ |
+| Authorization Server | MongoDB (#1): stores user authentication information, scopes, and the registered clients |
+| | Redis Cache (#1): stores user sessions and the already used authorization codes |
+| Client | Redis Cache (#2): stores user sessions |
+| Resource Server | MongoDB (#2): stores the user data |
+
+--- 
+
+# Authorization Code
+
+The Authorization code is a self-encoded token (JWT) that can only be used once.
+
+```ts {2-6|8|11|13|all}
+const authCodePayload: AuthCodePayload = {
+    client_id: req.query.client_id,
+    redirect_uri: req.query.redirect_uri,
+    scope: req.query.scope,
+    code_challenge: req.query.code_challenge,
+    code_challenge_method: req.query.code_challenge_method
+}
+const authCode = await jwt.sign(authCodePayload, PRIVATE_KEY, {
+    algorithm: 'RS256',
+    issuer: 'auth-server',
+    subject: req.session.subject,
+    audience: 'auth-server',
+    jwtid: generateUUIDv1(), // put in the cache as key
+    expiresIn: MAX_AUTH_CODE_LIFETIME
+})
+```
+
+---
+
+# Access Token Exchange (Code Verification)
+
+```ts {1-4|7,8|10|12-17|all}
+const decodedCode: AuthCodeExtendedPayload = await jwtVerify(req.body.code, PUBLIC_KEY, {
+        audience: 'auth-server',
+        issuer: 'auth-server',
+        algorithms: ['RS256']
+    })
+
+verifyCodeChallenge(decodedCode.code_challenge_method, 
+    decodedCode.code_challenge, req.body.code_verifier) // PKCE
+
+const codeKey = `username:${decodedCode.sub}:auth-code:${decodedCode.jti}`
+
+if (await redisClient.exists(codeKey))
+    throw new AuthCodeAlreadyUsed()
+
+await redisClient.set(codeKey, 1, {
+    'EX': MAX_AUTH_CODE_LIFETIME
+})
+```
+
+---
+
+# Access Token Exchange (Access Token Generation)
+
+The Access Token is a self-encoded token (JWT)
+
+```ts {1-4|5-12|all}
+const accessTokenPayload: AccessTokenPayload = {
+    client_id: decodedCode.client_id,
+    scope: decodedCode.scope
+}
+const accessToken = await jwtSign(accessTokenPayload, PRIVATE_KEY, {
+    algorithm: 'RS256',
+    issuer: 'auth-server',
+    subject: accessInfo.sub,
+    audience: 'resource-server',
+    jwtid: generateUUIDv1(),
+    expiresIn: MAX_ACCESS_TOKEN_LIFETIME
+})
+```
+
+---
