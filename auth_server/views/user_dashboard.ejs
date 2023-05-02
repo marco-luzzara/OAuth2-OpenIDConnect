@@ -44,10 +44,12 @@
                             <li class="mdl-list__item">
                                 <div class="mdl-list__item-primary-content"><%= clientAllowed.applicationName %></div>
                                 <div class="mdl-list__item-secondary-content">
-                                    <label class="mdl-switch mdl-js-switch mdl-js-ripple-effect" for="switch-revoked">
+                                    <label class="mdl-switch mdl-js-switch mdl-js-ripple-effect"
+                                        for="switch-revoked-<%- clientAllowed.clientId %>">
                                         <input data-client-id="<%- clientAllowed.clientId %>"
-                                            onchange="revokeClient(this)" type="checkbox" id="switch-revoked"
-                                            class="mdl-switch__input" <%- clientAllowed.isRevoked ? 'checked' : '' %> />
+                                            onchange="revokeClient(this)" type="checkbox"
+                                            id="switch-revoked-<%- clientAllowed.clientId %>" class="mdl-switch__input"
+                                            <%- clientAllowed.isRevoked ? 'checked' : '' %> />
                                         <span class="mdl-switch__label">Revoked</span>
                                     </label>
                                 </div>

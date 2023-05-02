@@ -465,7 +465,7 @@ const authCode = await jwt.sign(authCodePayload, PRIVATE_KEY, {
 # Access Token Exchange (Code Verification)
 
 ```ts {1-4|7,8|10|12-17|all}
-const decodedCode: AuthCodeExtendedPayload = await jwtVerify(req.body.code, PUBLIC_KEY, {
+const decodedCode: AuthCodeExtendedPayload = await jwt.verify(req.body.code, PUBLIC_KEY, {
         audience: 'auth-server',
         issuer: 'auth-server',
         algorithms: ['RS256']
@@ -474,7 +474,7 @@ const decodedCode: AuthCodeExtendedPayload = await jwtVerify(req.body.code, PUBL
 verifyCodeChallenge(decodedCode.code_challenge_method, 
     decodedCode.code_challenge, req.body.code_verifier) // PKCE
 
-const codeKey = `username:${decodedCode.sub}:auth-code:${decodedCode.jti}`
+const codeKey = `subject:${decodedCode.sub}:auth-code:${decodedCode.jti}`
 
 if (await redisClient.exists(codeKey))
     throw new AuthCodeAlreadyUsed()
@@ -506,3 +506,76 @@ const accessToken = await jwtSign(accessTokenPayload, PRIVATE_KEY, {
 ```
 
 ---
+
+# Access Token Exchange (Full Response)
+
+<v-clicks>
+
+- The Refresh Token is generated with the same payload of the Access Token. The differences are:
+  * The refresh token `audience` is `auth-server`
+  * The refresh token lifetime is longer
+- If `openid` is a scope, then the ID Token is returned as well
+
+  ```ts
+  tokenExchangeResponse.id_token = await jwt.sign({}, PRIVATE_KEY, {
+      algorithm: 'RS256',
+      issuer: 'auth-server',
+      subject: accessInfo.sub,
+      audience: accessInfo.client_id,
+      jwtid: generateUUIDv1(),
+      expiresIn: MAX_ID_TOKEN_LIFETIME
+  })
+  ```
+
+</v-clicks>
+
+---
+
+# Revoked Authorization
+
+The user can choose to revoke the access given to a client
+
+<div class="grid grid-rows-1 grid-cols-2 centered-grid">
+
+  ![Revoke Client](/images/revoke_client.png)
+
+  <p style="margin-left: 5%">
+  The revocation check applies when the access token expires and a new one is requested using the refresh token
+  </p>
+
+</div>
+
+---
+
+# Start Flow Request
+
+When the client starts the OAuth2 Code Flow, it internally generates:
+
+<v-clicks>
+
+- State
+  ```ts
+  function encodeOAuthStateParam(afterAuthUrl: string): string {
+      const nonce = crypto.randomBytes(16).toString('base64')
+      return `${nonce}${Buffer.from(afterAuthUrl).toString('base64')}`
+  }
+  req.session.oauthState = encodeOAuthStateParam(`${baseUrl}${req.query.callbackRoute}`)
+  ```
+- The code verifier and the code challenge
+  ```ts
+  export function generateCodeChallenge(codeVerifier: string): string {
+      const hashedCodeVerifier = crypto.createHash('sha256').update(codeVerifier).digest()
+      return base64url(hashedCodeVerifier)
+  }
+
+  req.session.codeVerifier = generateCodeVerifier(64)
+  const codeChallenge = generateCodeChallenge(req.session.codeVerifier)
+  ```
+
+</v-clicks>
+
+---
+
+# Testing
+
+Postman Flows

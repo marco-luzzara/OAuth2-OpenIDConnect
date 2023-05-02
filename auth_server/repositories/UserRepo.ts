@@ -72,8 +72,8 @@ export class UserRepoMongo implements UserRepo {
                 }
             ])
 
-		// cannot check on the modified count because the document is not modified if
-		// it remains the same. This happens when I authorize the same client twice
+        // cannot check on the modified count because the document is not modified if
+        // it remains the same. This happens when I authorize the same client twice
         return updateResult.acknowledged // && updateResult.modifiedCount === 1
     }
 

@@ -372,7 +372,7 @@ app.post(ACCESS_TOKEN_ROUTE, catchAsyncErrors(async (req: Request, res: Response
                     throw new OAuthAccessTokenExchangeFailedRequest(401, 'invalid_client', 'client_secret is wrong')
 
                 // using the client_id as first namespace is useful to revoke everything that belongs to a certain client-id
-                const codeKey = `username:${decodedCode.sub}:auth-code:${decodedCode.jti}`
+                const codeKey = `subject:${decodedCode.sub}:auth-code:${decodedCode.jti}`
 
                 // if the auth code token already exists in the cache, then it has been already used. see key set
                 if (await redisClient.exists(codeKey))
@@ -402,6 +402,7 @@ app.post(ACCESS_TOKEN_ROUTE, catchAsyncErrors(async (req: Request, res: Response
                     throw new OAuthAccessTokenExchangeFailedRequest(400, 'invalid_request', 'the specified client_id does not correspond to the one associated to the code')
 
                 // check the authorization has not been revoked
+                // TODO: the client id 41aff000-e8b4-11ed-bedc-41a6d646c439 is not registered for user undefined
                 const revocationCheck = await userRepo.isClientIdRevoked(req.session.subject, req.body.client_id)
                 if (!revocationCheck.ok)
                     throw new Error(`the client id ${req.body.client_id} is not registered for user ${req.session.username}`)
