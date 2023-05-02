@@ -576,6 +576,20 @@ When the client starts the OAuth2 Code Flow, it internally generates:
 
 ---
 
-# Testing
+# Tech Stack
 
-Postman Flows
+<div class="grid grid-rows-2 space-y-10 grid-cols-3 centered-grid">
+
+<img src="https://uxwing.com/wp-content/themes/uxwing/download/brands-and-social-media/postman-icon.png" class="w-35 h-35" />
+
+<img src="https://1000logos.net/wp-content/uploads/2021/11/Docker-Logo-2013.png" class="w-55 h-35" />
+
+<img src="https://miro.medium.com/v2/resize:fit:1400/1*f7ztMaMM0etsFHpEfkdiwA.png" class="w-55 h-35" />
+
+<img src="https://upload.wikimedia.org/wikipedia/commons/thumb/4/4c/Typescript_logo_2020.svg/2048px-Typescript_logo_2020.svg.png" class="w-35 h-35" />
+
+<img src="https://cdn.worldvectorlogo.com/logos/redis.svg" class="w-35 h-35" />
+
+<img src="https://www.svgrepo.com/show/331488/mongodb.svg" class="w-35 h-35" />
+
+</div>

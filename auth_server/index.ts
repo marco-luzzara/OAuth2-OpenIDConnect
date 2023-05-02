@@ -402,10 +402,9 @@ app.post(ACCESS_TOKEN_ROUTE, catchAsyncErrors(async (req: Request, res: Response
                     throw new OAuthAccessTokenExchangeFailedRequest(400, 'invalid_request', 'the specified client_id does not correspond to the one associated to the code')
 
                 // check the authorization has not been revoked
-                // TODO: the client id 41aff000-e8b4-11ed-bedc-41a6d646c439 is not registered for user undefined
-                const revocationCheck = await userRepo.isClientIdRevoked(req.session.subject, req.body.client_id)
+                const revocationCheck = await userRepo.isClientIdRevoked(decodedRefreshToken.sub, req.body.client_id)
                 if (!revocationCheck.ok)
-                    throw new Error(`the client id ${req.body.client_id} is not registered for user ${req.session.username}`)
+                    throw new Error(`the client id ${req.body.client_id} is not registered for user ${decodedRefreshToken.sub}`)
                 if (revocationCheck.response)
                     throw new OAuthAccessTokenExchangeFailedRequest(401, 'unauthorized_client', 'the client id has been revoked')
 
