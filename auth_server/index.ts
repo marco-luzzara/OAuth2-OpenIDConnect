@@ -541,7 +541,11 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
             return res.status(400).send(err.message)
         case ValidationError:
             return res.status(400).json((err as ValidationError).validationRules)
-        case UserNotAuthenticatedError || WrongCredentialsError || jwt.TokenExpiredError || jwt.JsonWebTokenError || AuthCodeAlreadyUsed:
+        case UserNotAuthenticatedError:
+        case WrongCredentialsError:
+        case jwt.TokenExpiredError:
+        case jwt.JsonWebTokenError:
+        case AuthCodeAlreadyUsed:
             return res.status(401).send(err.message)
         case OAuthAccessTokenExchangeFailedRequest:
             const accessTokenExchangeError = err as OAuthAccessTokenExchangeFailedRequest

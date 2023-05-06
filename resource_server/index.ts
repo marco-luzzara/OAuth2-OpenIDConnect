@@ -110,7 +110,9 @@ app.get(USER_INFO_ROUTE, catchAsyncErrors(async (req: Request, res: Response, ne
 // *********************** error handling
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
     switch (err.constructor) {
-        case InvalidToken || jwt.TokenExpiredError || jwt.JsonWebTokenError:
+        case InvalidToken:
+        case jwt.TokenExpiredError:
+        case jwt.JsonWebTokenError:
             return res.status(401).send(err.message)
         case NotExistingUser:
             return res.status(404).send(err.message)
