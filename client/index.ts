@@ -16,7 +16,7 @@ import { AccessTokenExchangeBody, AccessTokenExchangeResponse, OAuthRequestQuery
 import { ValidationError } from '../common/CustomErrors';
 import { generateCodeChallenge, generateUrlWithQueryParams } from '../common/utils/generationUtils';
 import { OAuthSelectScopesQueryParamsTypeCheck } from './model/routes/authorization';
-import { UnauthorizedRequest } from './model/errors';
+import { RefreshTokenUnavailableError, UnauthorizedRequest } from './model/errors';
 import { promisify } from 'util';
 import jwt, { Secret, VerifyOptions } from 'jsonwebtoken';
 
@@ -117,13 +117,32 @@ catch (err) {
     process.exit(1)
 }
 
+// *********************** types
+
+type FailResult<TReason> = {
+    ok: false,
+    reason: TReason
+}
+
+type AcknowledgeResult<TReason> = {
+    ok: true
+} | FailResult<TReason>
+
+type ResponseResult<TResult, TReason> = {
+    ok: true,
+    result: TResult
+} | FailResult<TReason>
+
 // *********************** routes middleware
 async function checkAccessToken(req: Request, res: Response, next: NextFunction) {
     if (!req.session.accessToken)
         next(new UnauthorizedRequest())
     else {
-        if (Date.now() >= req.session.tokenExpirationDate!)
-            await renewToken(req)
+        if (Date.now() >= req.session.tokenExpirationDate!) {
+            const refreshResult = await renewToken(req)
+            if (!refreshResult.ok)
+                return next(refreshResult.reason)
+        }
         next()
     }
 }
@@ -211,24 +230,33 @@ app.get(START_OAUTH_ROUTE, catchAsyncErrors(async (req: Request, res: Response, 
         })
 ));
 
-async function sendTokenExchangeRequest(req: Request, body: AccessTokenExchangeBody | RefreshTokenExchangeBody) {
-    const accessTokenResponse: AxiosResponse<AccessTokenExchangeResponse> =
-        await axios.post(`${AUTH_SERVER_ENDPOINT}/oauth/access_token`, body)
+async function sendTokenExchangeRequest(req: Request, body: AccessTokenExchangeBody | RefreshTokenExchangeBody): Promise<AcknowledgeResult<any>> {
+    try {
+        const accessTokenResponse = await axios.post(`${AUTH_SERVER_ENDPOINT}/oauth/access_token`, body)
 
-    req.session.accessToken = accessTokenResponse.data.access_token
-    req.session.refreshToken = accessTokenResponse.data.refresh_token
-    // * 1000 because the expires_in field is expressed in seconds
-    req.session.tokenExpirationDate = Date.now() + accessTokenResponse.data.expires_in * 1000
-    req.session.tokenType = accessTokenResponse.data.token_type
+        req.session.accessToken = accessTokenResponse.data.access_token
+        req.session.refreshToken = accessTokenResponse.data.refresh_token
+        // * 1000 because the expires_in field is expressed in seconds
+        req.session.tokenExpirationDate = Date.now() + accessTokenResponse.data.expires_in * 1000
+        req.session.tokenType = accessTokenResponse.data.token_type
 
-    if (accessTokenResponse.data.id_token !== undefined) {
-        const decodedIdToken: TokenBasicPayload = await jwtVerify(accessTokenResponse.data.id_token, AUTH_SERVER_PUBLIC_KEY, {
-            issuer: 'auth-server',
-            audience: await clientInfo.clientId,
-            algorithms: ['RS256']
-        })
-        req.session.userId = decodedIdToken.sub
-        req.session.idTokenExpirationDate = Date.now() + decodedIdToken.exp * 1000
+        if (accessTokenResponse.data.id_token !== undefined) {
+            const decodedIdToken: TokenBasicPayload = await jwtVerify(accessTokenResponse.data.id_token, AUTH_SERVER_PUBLIC_KEY, {
+                issuer: 'auth-server',
+                audience: await clientInfo.clientId,
+                algorithms: ['RS256']
+            })
+            req.session.userId = decodedIdToken.sub
+            req.session.idTokenExpirationDate = Date.now() + decodedIdToken.exp * 1000
+        }
+
+        return { ok: true };
+    }
+    catch (err) {
+        return {
+            ok: false,
+            reason: err
+        }
     }
 }
 
@@ -251,20 +279,25 @@ app.get(AUTH_CALLBACK_ROUTE, catchAsyncErrors(async (req: Request, res: Response
                 grant_type: 'authorization_code',
                 code_verifier: req.session.codeVerifier!
             }
-            await sendTokenExchangeRequest(req, accessTokenExchangeBody)
+            const tokenExchangeAck = await sendTokenExchangeRequest(req, accessTokenExchangeBody)
+
+            if (!tokenExchangeAck.ok) {
+                console.log(tokenExchangeAck.reason)
+                return res.redirect(HOME_ROUTE)
+            }
 
             res.redirect(callbackUri)
         })
 ));
 
-async function renewToken(req: Request) {
+async function renewToken(req: Request): Promise<AcknowledgeResult<any>> {
     const refreshTokenExchangeBody: RefreshTokenExchangeBody = {
         client_id: await clientInfo.clientId,
         refresh_token: req.session.refreshToken!,
         client_secret: await clientInfo.clientSecret,
         grant_type: 'refresh_token'
     }
-    await sendTokenExchangeRequest(req, refreshTokenExchangeBody)
+    return await sendTokenExchangeRequest(req, refreshTokenExchangeBody)
 }
 
 /**
@@ -274,16 +307,37 @@ async function renewToken(req: Request) {
  * @param fallback the function to be called in case of 401
  * @returns 
  */
-async function sendRequestWithFallbackIf401(request: () => Promise<any>, fallback: () => Promise<any>) {
+async function sendRequestWithFallbackIf401<TResult>(
+    request: () => Promise<TResult>,
+    fallback: (err: AxiosError) => Promise<TResult>): Promise<ResponseResult<TResult, any>> {
     try {
-        return await request()
+        const result = await request()
+        return {
+            ok: true,
+            result: result
+        }
     }
     catch (err) {
         if (err instanceof AxiosError && err.response?.status === 401) {
-            return await fallback()
+            try {
+                const result = await fallback(err)
+                return {
+                    ok: true,
+                    result: result
+                }
+            }
+            catch (fallbackErr) {
+                return {
+                    ok: false,
+                    reason: fallbackErr
+                }
+            }
         }
         else
-            throw err
+            return {
+                ok: false,
+                reason: err
+            }
     }
 }
 
@@ -296,19 +350,21 @@ app.get(USER_DATA_ROUTE, checkAccessToken, catchAsyncErrors(async (req: Request,
             'Authorization': `Bearer ${req.session.accessToken}`
         }
     })
-    const userRes = await sendRequestWithFallbackIf401(userDataRequest, async () => {
-        await renewToken(req)
-        return await sendRequestWithFallbackIf401(userDataRequest, () => {
-            resetSession(req.session)
-            return Promise.resolve(null)
-        })
+    // i am retrying with a new access token if the first request fails
+    const userRes = await sendRequestWithFallbackIf401(userDataRequest, async (err) => {
+        const renewTokenAck = await renewToken(req)
+        if (!renewTokenAck.ok)
+            throw new RefreshTokenUnavailableError()
+
+        return await userDataRequest()
     })
 
-    if (userRes === null) {
-        res.redirect(HOME_ROUTE)
-        return
+    if (!userRes.ok) {
+        resetSession(req.session)
+        console.log(userRes.reason)
+        return res.redirect(HOME_ROUTE)
     }
-    const userData = userRes.data
+    const userData = userRes.result.data
 
     res.render('user_data_viewer', completeRenderingWithAuthInfo(req, {
         userData: JSON.stringify(userData, null, 4),
@@ -326,25 +382,27 @@ app.get(USER_INFO_ROUTE, checkAccessToken, catchAsyncErrors(async (req: Request,
             'Authorization': `Bearer ${req.session.accessToken}`
         }
     })
-    const userRes = await sendRequestWithFallbackIf401(userInfoRequest, async () => {
-        await renewToken(req)
-        return await sendRequestWithFallbackIf401(userInfoRequest, () => {
-            resetSession(req.session)
-            return Promise.resolve(null)
-        })
+
+    const userRes = await sendRequestWithFallbackIf401(userInfoRequest, async (err) => {
+        const renewTokenAck = await renewToken(req)
+        if (!renewTokenAck.ok)
+            throw new RefreshTokenUnavailableError()
+
+        return await userInfoRequest()
     })
 
-    if (userRes === null) {
-        res.status(401).end()
-        return
+    if (!userRes.ok) {
+        resetSession(req.session)
+        console.log(userRes.reason)
+        return res.redirect(HOME_ROUTE)
     }
-    const userInfo: UserInfoResponse = userRes.data
+    const userInfo: UserInfoResponse = userRes.result.data
 
     res.json(userInfo);
 }));
 
 /**
- * reset the all the tokens
+ * reset all the tokens and user info
  */
 app.get(RESET_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) => {
     resetSession(req.session)
@@ -360,6 +418,7 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
         case ValidationError:
             return res.status(400).json((err as ValidationError).validationRules)
         case UnauthorizedRequest:
+        case RefreshTokenUnavailableError:
             return res.status(401).send(err.message)
         default:
             console.log(err)
