@@ -2,6 +2,7 @@
 dist/
 *.secret
 client/client_data.txt
+presentation/OAuth-OpenIDConnect/slides-export.pdf
 
 # Logs
 logs

@@ -26,11 +26,11 @@ layout: intro
 
 # Client Registration
 
-<div class="grid grid-rows-1 grid-cols-3 centered-grid">
+<div class="flex centered-flex">
 
   <EntityLane title="Client" />
 
-  <div class="grid grid-rows-2 grid-cols-1 centered-grid message-body">
+  <div class="flex centered-flex flex-col message-body">
 
   <Message direction="right" v-click="1">
 
@@ -69,17 +69,17 @@ layout: intro
 </div>
 
 ---
-layout: iframe-right
+layout: image-right
 
 # the web page source
-url: http://localhost:2346/
+image: ./images/client_home.png
 ---
 
 # The User Starts the Code Flow
 
-<div class="grid grid-rows-3 grid-cols-1 centered-grid">
+<div class="grid grid-rows-2 grid-cols-1 centered-grid">
 
-  <div>
+  <div v-click="1">
 
   **GET**
 
@@ -91,6 +91,7 @@ url: http://localhost:2346/
 
   </div>
 
+  <div class="grid grid-rows-2 grid-cols-1 centered-grid" v-click="2">
   <material-symbols-arrow-circle-down-rounded class="text-5xl" />
 
   <div>
@@ -101,6 +102,7 @@ url: http://localhost:2346/
   Location: http://auth_server.com/oauth/authorize/...
   ```
   </div>
+  </div>
 
 </div>
 
@@ -108,11 +110,11 @@ url: http://localhost:2346/
 
 # Authorize Request
 
-<div class="grid grid-rows-1 grid-cols-3 centered-grid">
+<div class="flex centered-flex">
 
   <EntityLane title="User Browser" />
 
-  <div class="grid grid-rows-2 grid-cols-1 centered-grid message-body">
+  <div class="flex centered-flex flex-col message-body">
 
   <Message direction="right" v-click="1">
 
@@ -136,7 +138,7 @@ url: http://localhost:2346/
 
   <Message direction="left" v-click="2">
 
-  ![Login page](/images/login.png)
+  <img src="/images/login.png" class="w-50" />
 
   </Message>
   </div>
@@ -149,11 +151,11 @@ url: http://localhost:2346/
 
 # Login Procedure
 
-<div class="grid grid-rows-1 grid-cols-3 centered-grid">
+<div class="flex centered-flex">
 
   <EntityLane title="User Browser" />
 
-  <div class="grid grid-rows-2 grid-cols-1 centered-grid message-body">
+  <div class="flex centered-flex flex-col message-body">
 
   <Message direction="right" v-click="1">
 
@@ -187,11 +189,11 @@ url: http://localhost:2346/
 
 # Show Dialog to Allow/Deny User Data access
 
-<div class="grid grid-rows-1 grid-cols-3 centered-grid">
+<div class="flex centered-flex">
 
   <EntityLane title="User Browser" />
 
-  <div class="grid grid-rows-2 grid-cols-1 centered-grid message-body">
+  <div class="flex centered-flex flex-col message-body">
 
   <Message direction="right" v-click="1">
 
@@ -209,7 +211,7 @@ url: http://localhost:2346/
 
   <Message direction="left" v-click="2">
 
-  ![Auth dialog page](/images/auth_dialog.png)
+  <img src="/images/auth_dialog.png" class="w-110" />
 
   </Message>
   </div>
@@ -221,13 +223,17 @@ url: http://localhost:2346/
 
 # The User approves the request
 
-<div class="grid grid-rows-1 grid-cols-3 centered-grid">
+<div class="flex centered-flex">
 
   <EntityLane title="User Browser" />
 
-  <Message direction="right" v-click="1" class="message-body">
+  <div class="flex centered-flex flex-col message-body">
 
-  ![Auth dialog allow](/images/auth_dialog_allow.png)
+  <Message direction="right" v-click="1">
+
+  <img src="/images/auth_dialog_allow.png" class="w-55" />
+
+  <div>
 
   **GET**
 
@@ -237,7 +243,11 @@ url: http://localhost:2346/
       params(/oauth/authorize)
   ```
 
+  </div>
+
   </Message>
+
+  </div>
 
   <EntityLane title="Authorization Server" />
 </div>
@@ -246,11 +256,15 @@ url: http://localhost:2346/
 
 # The Authorization code is generated
 
-<div class="grid grid-rows-1 grid-cols-3 centered-grid">
+<div class="flex centered-flex">
 
   <EntityLane title="Authorization Server" />
 
-  <Message direction="right" v-click="1" class="message-body">
+  <div class="flex centered-flex flex-col message-body">
+
+  <Message direction="right" v-click="1">
+
+  <div>
 
   **302 Found**
 
@@ -260,7 +274,11 @@ url: http://localhost:2346/
     state=client_state
   ```
 
+  </div>
+
   </Message>
+
+  </div>
 
   <EntityLane title="Client" />
 </div>
@@ -269,11 +287,11 @@ url: http://localhost:2346/
 
 # Access Token Exchange
 
-<div class="grid grid-rows-1 grid-cols-3 centered-grid">
+<div class="flex centered-flex">
 
   <EntityLane title="Client" />
 
-  <div class="grid grid-rows-2 grid-cols-1 centered-grid message-body">
+  <div class="flex centered-flex flex-col message-body">
 
   <Message direction="right" v-click="1">
 
@@ -296,6 +314,8 @@ url: http://localhost:2346/
 
   <Message direction="left" v-click="2">
 
+  <div>
+
   **200 OK**
 
   Cache-Control: no-store <br />
@@ -308,7 +328,9 @@ url: http://localhost:2346/
     "expires_in": 60,
     "refresh_token": "jwt_refresh_token"
   }
-  ```  
+  ```
+
+  </div>
 
   </Message>
   </div>
@@ -320,12 +342,12 @@ url: http://localhost:2346/
 
 # Query User Data with Access Token
 
-<div class="grid grid-rows-1 grid-cols-3 centered-grid">
+<div class="flex centered-flex">
 
   <EntityLane title="Client" />
 
   <div>
-  <div class="message-body">
+  <div class="message-body" v-click="1">
 
   ```js
   const callbackUri = decodeOAuthStateParam(req.query.state)
@@ -334,14 +356,18 @@ url: http://localhost:2346/
 
   </div>
 
-  <div v-click="1" id="redirect-message">
+  <div v-click="2" id="redirect-message">
   <Message direction="redirect" style="margin-top: 3%">
+
+  <div>
 
   **302 Found**
 
   ```
   Location: ${callbackUri}
   ```
+
+  </div>
 
   </Message>
 
@@ -362,11 +388,11 @@ url: http://localhost:2346/
 
 # The Client queries the Resource Server
 
-<div class="grid grid-rows-1 grid-cols-3 centered-grid">
+<div class="flex centered-flex">
 
   <EntityLane title="Client" />
 
-  <div class="grid grid-rows-2 grid-cols-1 centered-grid message-body">
+  <div class="flex centered-flex flex-col message-body">
 
   <Message direction="right" v-click="1">
 
@@ -381,6 +407,8 @@ url: http://localhost:2346/
 
   <Message direction="left" v-click="2">
 
+  <div>
+
   **200 OK**
 
   ```json
@@ -394,7 +422,9 @@ url: http://localhost:2346/
         }
     ]
   }
-  ```  
+  ```
+
+  </div>
 
   </Message>
   </div>
@@ -406,15 +436,17 @@ url: http://localhost:2346/
 
 # The Client returns the formatted User Data
 
-<div class="grid grid-rows-1 grid-cols-3 centered-grid">
+<div class="flex centered-flex">
 
   <EntityLane title="Client" />
 
-  <Message direction="right" class="message-body">
+  <div class="flex centered-flex flex-col message-body">
+  <Message direction="right">
 
-  ![User Data](/images/user_data.png)
+  <img src="/images/user_data.png" class="w-130" />
 
   </Message>
+  </div>
 
   <EntityLane title="User Browser" />
 </div>
@@ -438,11 +470,40 @@ layout: cover
 
 --- 
 
+# Start Flow Request
+
+When the client starts the OAuth2 Code Flow, it internally generates:
+
+<v-clicks>
+
+- State
+  ```ts
+  function encodeOAuthStateParam(afterAuthUrl: string): string {
+      const nonce = crypto.randomBytes(16).toString('base64')
+      return `${nonce}${Buffer.from(afterAuthUrl).toString('base64')}`
+  }
+  req.session.oauthState = encodeOAuthStateParam(`${baseUrl}${req.query.callbackRoute}`)
+  ```
+- The code verifier and the code challenge
+  ```ts
+  export function generateCodeChallenge(codeVerifier: string): string {
+      const hashedCodeVerifier = crypto.createHash('sha256').update(codeVerifier).digest()
+      return base64url(hashedCodeVerifier)
+  }
+
+  req.session.codeVerifier = generateCodeVerifier(64)
+  const codeChallenge = generateCodeChallenge(req.session.codeVerifier)
+  ```
+
+</v-clicks>
+
+---
+
 # Authorization Code
 
 The Authorization code is a self-encoded token (JWT) that can only be used once.
 
-```ts {2-6|8|11|13|all}
+```ts {1-7|8|11|13|all}
 const authCodePayload: AuthCodePayload = {
     client_id: req.query.client_id,
     redirect_uri: req.query.redirect_uri,
@@ -535,7 +596,7 @@ const accessToken = await jwtSign(accessTokenPayload, PRIVATE_KEY, {
 
 The user can choose to revoke the access given to a client
 
-<div class="grid grid-rows-1 grid-cols-2 centered-grid">
+<div class="grid grid-rows-1 grid-cols-2 centered-grid" v-click="1">
 
   ![Revoke Client](/images/revoke_client.png)
 
@@ -547,40 +608,11 @@ The user can choose to revoke the access given to a client
 
 ---
 
-# Start Flow Request
-
-When the client starts the OAuth2 Code Flow, it internally generates:
-
-<v-clicks>
-
-- State
-  ```ts
-  function encodeOAuthStateParam(afterAuthUrl: string): string {
-      const nonce = crypto.randomBytes(16).toString('base64')
-      return `${nonce}${Buffer.from(afterAuthUrl).toString('base64')}`
-  }
-  req.session.oauthState = encodeOAuthStateParam(`${baseUrl}${req.query.callbackRoute}`)
-  ```
-- The code verifier and the code challenge
-  ```ts
-  export function generateCodeChallenge(codeVerifier: string): string {
-      const hashedCodeVerifier = crypto.createHash('sha256').update(codeVerifier).digest()
-      return base64url(hashedCodeVerifier)
-  }
-
-  req.session.codeVerifier = generateCodeVerifier(64)
-  const codeChallenge = generateCodeChallenge(req.session.codeVerifier)
-  ```
-
-</v-clicks>
-
----
-
 # Tech Stack
 
 <div class="grid grid-rows-2 space-y-10 grid-cols-3 centered-grid">
 
-<img src="https://uxwing.com/wp-content/themes/uxwing/download/brands-and-social-media/postman-icon.png" class="w-35 h-35" />
+<img src="https://www.svgrepo.com/download/354202/postman-icon.svg" class="w-35 h-35" />
 
 <img src="https://1000logos.net/wp-content/uploads/2021/11/Docker-Logo-2013.png" class="w-55 h-35" />
 

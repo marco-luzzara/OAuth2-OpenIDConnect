@@ -8,7 +8,8 @@ export default {
     <div style="display: flex; flex-direction: row; align-items: center; width: 100%; margin-bottom: 3%;">
         <div class="arrow-left" v-if="direction === 'left'"></div>
         <!-- <ic-baseline-keyboard-arrow-left v-if="direction === 'left'" class="text-5xl" /> -->
-        <div style="border: 0.15em solid white; padding: 1%; width: 100%">
+        <div style="border: 0.15em solid white; padding: 1%; width: 100%; justify-content: center; align-items: center;"
+            class="flex flex-col">
             <slot />
         </div>
         <div class="arrow-right" v-if="direction === 'right'"></div>
