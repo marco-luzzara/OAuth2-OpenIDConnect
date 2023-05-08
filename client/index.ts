@@ -140,8 +140,10 @@ async function checkAccessToken(req: Request, res: Response, next: NextFunction)
     else {
         if (Date.now() >= req.session.tokenExpirationDate!) {
             const refreshResult = await renewToken(req)
-            if (!refreshResult.ok)
-                return next(refreshResult.reason)
+            if (!refreshResult.ok) {
+                console.log(refreshResult.reason)
+                return next(new RefreshTokenUnavailableError())
+            }
         }
         next()
     }
