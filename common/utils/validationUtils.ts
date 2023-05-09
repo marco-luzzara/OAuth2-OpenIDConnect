@@ -52,7 +52,6 @@ export async function validateUnionBody<P1 extends t.Props, P2 extends t.Props>(
     if (propValidated._tag === 'Left')
         throw new ValidationError(propValidated.left)
 
-    propValidated.right
     const validationResult = validateObject(bodyValidationType as any, req.body)
     req.body = validationResult
     await handler(req, res, next)
@@ -72,6 +71,32 @@ export async function validateQueryParams<P extends t.Props>(
     await handler(req as Modify<Request, {
         query: {
             [K in keyof P]: TypeOf<P[K]>
+        }
+    }>, res, next)
+}
+
+export async function validateUnionQueryParams<P1 extends t.Props, P2 extends t.Props>(
+    req: Request, res: Response, next: NextFunction,
+    queryParamsValidationType: t.UnionC<[t.TypeC<P1>, t.TypeC<P2>]>,
+    handler: (req: Modify<Request, {
+        query: {
+            [K in keyof P1]: TypeOf<P1[K]>
+        } | {
+            [K in keyof P2]: TypeOf<P2[K]>
+        }
+    }>, res: Response, next: NextFunction) => Promise<void>
+) {
+    const propValidated = queryParamsValidationType.decode(req.query)
+    if (propValidated._tag === 'Left')
+        throw new ValidationError(propValidated.left)
+
+    const validationResult = validateObject(queryParamsValidationType as any, req.query)
+    req.query = validationResult
+    await handler(req as Modify<Request, {
+        query: {
+            [K in keyof P1]: TypeOf<P1[K]>
+        } | {
+            [K in keyof P2]: TypeOf<P2[K]>
         }
     }>, res, next)
 }

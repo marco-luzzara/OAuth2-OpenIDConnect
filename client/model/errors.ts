@@ -9,3 +9,9 @@ export class RefreshTokenUnavailableError extends Error {
         super('Cannot exchange a new access token with the refresh token')
     }
 }
+
+export class UserDeniedAccessError extends Error {
+    constructor() {
+        super('The user did not allow the client')
+    }
+}

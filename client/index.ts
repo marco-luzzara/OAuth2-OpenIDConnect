@@ -1,5 +1,5 @@
 import express, { Express, Request, Response, NextFunction } from 'express';
-import axios, { AxiosError, AxiosResponse } from 'axios';
+import axios, { AxiosError, AxiosResponse, HttpStatusCode } from 'axios';
 import { useLogger } from '../common/utils/loggingUtils';
 import dirName, { getEnvOrExit, ClientInfo } from '../common/utils/envUtils';
 import cookieParser from 'cookie-parser';
@@ -10,13 +10,13 @@ import { createClient } from 'redis';
 import RedisStore from 'connect-redis';
 import session, { SessionData } from 'express-session';
 import { catchAsyncErrors } from '../common/utils/errorHandlingUtils';
-import { validateQueryParams } from '../common/utils/validationUtils';
+import { validateQueryParams, validateUnionQueryParams } from '../common/utils/validationUtils';
 import { AuthorizationCallbackParamsTypeCheck } from './model/routes/access_token_exchange';
 import { AccessTokenExchangeBody, AccessTokenExchangeResponse, OAuthRequestQueryParams, RefreshTokenExchangeBody, TokenBasicPayload, UserInfoResponse } from '../common/types/oauth_types'
 import { ValidationError } from '../common/CustomErrors';
 import { generateCodeChallenge, generateUrlWithQueryParams } from '../common/utils/generationUtils';
 import { OAuthSelectScopesQueryParamsTypeCheck } from './model/routes/authorization';
-import { RefreshTokenUnavailableError, UnauthorizedRequest } from './model/errors';
+import { RefreshTokenUnavailableError, UnauthorizedRequest, UserDeniedAccessError } from './model/errors';
 import { promisify } from 'util';
 import jwt, { Secret, VerifyOptions } from 'jsonwebtoken';
 
@@ -267,8 +267,11 @@ async function sendTokenExchangeRequest(req: Request, body: AccessTokenExchangeB
  * an access token
  */
 app.get(AUTH_CALLBACK_ROUTE, catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) =>
-    await validateQueryParams(req, res, next, AuthorizationCallbackParamsTypeCheck,
+    await validateUnionQueryParams(req, res, next, AuthorizationCallbackParamsTypeCheck,
         async (req, res: Response, next: NextFunction) => {
+            if ('error' in req.query)
+                throw new UserDeniedAccessError();
+
             if (req.query.state !== req.session.oauthState)
                 throw new ValidationError('state param has been manipulated')
             const callbackUri = decodeOAuthStateParam(req.query.state)
@@ -419,6 +422,8 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
     switch (err.constructor) {
         case ValidationError:
             return res.status(400).json((err as ValidationError).validationRules)
+        case UserDeniedAccessError:
+            return res.status(403).send(err.message)
         case UnauthorizedRequest:
         case RefreshTokenUnavailableError:
             return res.status(401).send(err.message)
