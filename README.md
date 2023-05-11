@@ -86,3 +86,14 @@ In order to disable PKCE, for Postman testing for example, run the project in de
 NODE_ENV=debug npm run auth_server
 NODE_ENV=debug npm run client
 ```
+
+---
+
+## Postman Flow
+
+You can test the Code Flow by using the (currently Beta) feature of Postman called **Postman Flow**. This is the flow:
+
+![Code Flow Successful](./public/postman_flow.png)
+
+**Note**: I had to vertically stack the 2 parts of the flow, but they don't perfectly match: the line connecting "Start OAuth" and "Login" blocks is fragmented in 2 parts. If you find a way to share it as a Postman link (instead of using an image), please open a PR.
+
